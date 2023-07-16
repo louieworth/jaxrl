@@ -1,6 +1,10 @@
 import os
 import random
 import time
+import sys
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  
+# __file__获取执行文件相对路径，整行为取上一级的上一级目录
+sys.path.append(BASE_DIR)
 
 import numpy as np
 import tqdm
@@ -35,7 +39,7 @@ flags.DEFINE_string('wandb_project_name', "jaxrl", "The wandb's project name.")
 flags.DEFINE_string('wandb_entity', None, "the entity (team) of wandb's project")
 config_flags.DEFINE_config_file(
     'config',
-    'configs/sac_default.py',
+    'examples/configs/sac_default.py',
     'File path to the training hyperparameter configuration.',
     lock_config=False)
 
