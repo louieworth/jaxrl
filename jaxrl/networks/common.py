@@ -32,6 +32,7 @@ class MLP(nn.Module):
             x = nn.Dense(size, kernel_init=default_init())(x)
             if i + 1 < len(self.hidden_dims) or self.activate_final:
                 x = self.activations(x)
+                x = nn.LayerNorm()(x)
                 if self.dropout_rate is not None:
                     x = nn.Dropout(rate=self.dropout_rate)(
                         x, deterministic=not training)
