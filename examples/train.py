@@ -20,7 +20,7 @@ from jaxrl.utils import make_env
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('env_name', 'HalfCheetah-v2', 'Environment name.')
+flags.DEFINE_string('env_name', 'HalfCheetah-v4', 'Environment name.')
 flags.DEFINE_string('save_dir', './tmp/', 'Tensorboard logging dir.')
 flags.DEFINE_integer('seed', 42, 'Random seed.')
 flags.DEFINE_integer('eval_episodes', 10,
@@ -35,8 +35,8 @@ flags.DEFINE_integer('start_training', int(1e4),
 flags.DEFINE_boolean('tqdm', True, 'Use tqdm progress bar.')
 flags.DEFINE_boolean('save_video', False, 'Save videos during evaluation.')
 flags.DEFINE_boolean('track', True, 'Track experiments with Weights and Biases.')
-flags.DEFINE_string('wandb_project_name', "jaxrl", "The wandb's project name.")
-flags.DEFINE_string('wandb_entity', None, "the entity (team) of wandb's project")
+flags.DEFINE_string('wandb_project_name', "sparse_rl", "The wandb's project name.")
+flags.DEFINE_string('wandb_entity', "louis_t0", "the entity (team) of wandb's project")
 config_flags.DEFINE_config_file(
     'config',
     'examples/configs/sac_default.py',
@@ -161,3 +161,6 @@ def main(_):
             # np.savetxt(os.path.join(FLAGS.save_dir, f'{FLAGS.seed}.txt'),
             #            eval_returns,
             #            fmt=['%d', '%.1f'])
+            
+if __name__ == '__main__':
+    app.run(main)
