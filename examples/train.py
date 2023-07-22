@@ -47,7 +47,7 @@ config_flags.DEFINE_config_file(
 def main(_):
     kwargs = dict(FLAGS.config)
     algo = kwargs.pop('algo')
-    run_name = f"{FLAGS.env_name}__{algo}__{FLAGS.seed}"
+    run_name = f"layer_norm_{FLAGS.env_name}__{algo}__{FLAGS.seed}"
     if FLAGS.track:
         import wandb
         
