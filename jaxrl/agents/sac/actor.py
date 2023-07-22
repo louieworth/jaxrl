@@ -1,4 +1,5 @@
 from typing import Tuple
+import functools
 
 import jax
 import jax.numpy as jnp
@@ -6,7 +7,7 @@ import jax.numpy as jnp
 from jaxrl.datasets import Batch
 from jaxrl.networks.common import InfoDict, Model, Params, PRNGKey
 
-
+@jax.jit
 def update(key: PRNGKey, actor: Model, critic: Model, temp: Model,
            batch: Batch) -> Tuple[Model, InfoDict]:
 

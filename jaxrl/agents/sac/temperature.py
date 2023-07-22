@@ -1,5 +1,6 @@
 from typing import Tuple
 
+import jax
 import jax.numpy as jnp
 from flax import linen as nn
 
@@ -16,7 +17,7 @@ class Temperature(nn.Module):
                                   (), jnp.log(self.initial_temperature)))
         return jnp.exp(log_temp)
 
-
+@jax.jit
 def update(temp: Model, entropy: float,
            target_entropy: float) -> Tuple[Model, InfoDict]:
 

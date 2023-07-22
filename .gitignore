@@ -1,6 +1,7 @@
 *.tfevents.*
 tmp
 wandb
+nohup.out
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -131,3 +132,5 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+nohup.out

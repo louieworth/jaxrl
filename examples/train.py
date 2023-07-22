@@ -1,6 +1,9 @@
 import os
+import sys
 import random
 import time
+import logging
+import IPython
 
 import numpy as np
 import tqdm
@@ -8,16 +11,24 @@ from absl import app, flags
 from ml_collections import config_flags
 from tensorboardX import SummaryWriter
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  
+# __file__获取执行文件相对路径，整行为取上一级的上一级目录
+sys.path.append(BASE_DIR)
+
 from jaxrl.agents import (AWACLearner, DDPGLearner, REDQLearner, SACLearner,
                           SACV1Learner)
 from jaxrl.datasets import ReplayBuffer
 from jaxrl.evaluation import evaluate
 from jaxrl.utils import make_env
 
+import jaxpruner
+import ml_collections
 FLAGS = flags.FLAGS
 
+
+
 flags.DEFINE_string('env_name', 'HalfCheetah-v2', 'Environment name.')
-flags.DEFINE_string('save_dir', './tmp/', 'Tensorboard logging dir.')
+flags.DEFINE_string('save_dir', 'tmp/', 'Tensorboard logging dir.')
 flags.DEFINE_integer('seed', 42, 'Random seed.')
 flags.DEFINE_integer('eval_episodes', 10,
                      'Number of episodes used for evaluation.')
@@ -28,14 +39,29 @@ flags.DEFINE_integer('updates_per_step', 1, 'Gradient updates per step.')
 flags.DEFINE_integer('max_steps', int(1e6), 'Number of training steps.')
 flags.DEFINE_integer('start_training', int(1e4),
                      'Number of training steps to start training.')
+flags.DEFINE_boolean('layer_normalization', False, 'Use layer normalization.')
 flags.DEFINE_boolean('tqdm', True, 'Use tqdm progress bar.')
 flags.DEFINE_boolean('save_video', False, 'Save videos during evaluation.')
-flags.DEFINE_boolean('track', False, 'Track experiments with Weights and Biases.')
-flags.DEFINE_string('wandb_project_name', "jaxrl", "The wandb's project name.")
-flags.DEFINE_string('wandb_entity', None, "the entity (team) of wandb's project")
+flags.DEFINE_boolean('track', True, 'Track experiments with Weights and Biases.')
+flags.DEFINE_string('wandb_project_name', "sparse_rl", "The wandb's project name.")
+flags.DEFINE_string('wandb_entity', "louis_t0", "the entity (team) of wandb's project")
+
+###sparsity config
+# parser.add_argument("--prune", action="store_true")
+flags.DEFINE_string("prune_algorithm", "no_prune", "pruning algorithm")
+# ('no_prune', 'magnitude', 'random', 'saliency', 'magnitude_ste', 'random_ste', 
+# 'global_magnitude', 'global_saliency', 'static_sparse', 'rigl','set')
+flags.DEFINE_integer("prune_update_freq", int(1e4), "update frequency")
+flags.DEFINE_integer("prune_update_end_step", int(1e6), "update end step")
+flags.DEFINE_integer("prune_update_start_step", int(1e4), "update start step")
+flags.DEFINE_float("prune_actor_sparsity", 0.95, "sparsity")
+flags.DEFINE_float("prune_critic_sparsity", 0.95, "sparsity")
+flags.DEFINE_string("prune_dist_type", "erk", "distribution type")
+
+# config definition
 config_flags.DEFINE_config_file(
     'config',
-    'configs/sac_default.py',
+    'examples/configs/sac_default.py',
     'File path to the training hyperparameter configuration.',
     lock_config=False)
 
@@ -43,23 +69,57 @@ config_flags.DEFINE_config_file(
 def main(_):
     kwargs = dict(FLAGS.config)
     algo = kwargs.pop('algo')
-    run_name = f"{FLAGS.env_name}__{algo}__{FLAGS.seed}__{int(time.time())}"
+    run_name = f"{FLAGS.env_name}__{algo}__{FLAGS.seed}"
     if FLAGS.track:
         import wandb
+        
+        clean_config = {}
+        clean_config['algo'] = algo
+        
+        clean_config['env_name'] = FLAGS.env_name
+        clean_config['seed'] = FLAGS.seed
+        clean_config['layer_normalization'] = FLAGS.layer_normalization
+        clean_config['actor_lr']=kwargs['actor_lr']
+        clean_config['critic_lr']=kwargs['critic_lr']
+        
+        clean_config['prune_algorithm']=FLAGS.prune_algorithm
+        clean_config['prune_update_freq']=FLAGS.prune_update_freq
+        clean_config['prune_update_start_step']=FLAGS.prune_update_start_step
+        clean_config['prune_actor_sparsity']=FLAGS.prune_actor_sparsity
+        clean_config['prune_critic_sparsity']=FLAGS.prune_critic_sparsity
 
         wandb.init(
             project=FLAGS.wandb_project_name,
             entity=FLAGS.wandb_entity,
-            sync_tensorboard=True,
-            config=FLAGS,
+            # sync_tensorboard=True,
+            config=clean_config,
             name=run_name,
             monitor_gym=True,
             save_code=True,
         )
         wandb.config.update({"algo": algo})
+        
+    sparsity_config = ml_collections.ConfigDict()
+    # TODO 这个pruning updates是如何的？和training updates有什么区别？
+    sparsity_config.algorithm = FLAGS.prune_algorithm
+    sparsity_config.update_freq = FLAGS.prune_update_freq
+    sparsity_config.update_end_step = FLAGS.prune_update_end_step
+    sparsity_config.update_start_step = FLAGS.prune_update_start_step
+    sparsity_config.sparsity = FLAGS.prune_critic_sparsity
+    sparsity_config.dist_type = FLAGS.prune_dist_type
+    
+    actor_pruner = jaxpruner.create_updater_from_config(sparsity_config)
+    sparsity_config.sparsity = FLAGS.prune_critic_sparsity
+    critic_pruner = jaxpruner.create_updater_from_config(sparsity_config)
+    kwargs['layer_normalization'] = FLAGS.layer_normalization
+    kwargs['actor_pruner'] = actor_pruner
+    kwargs['critic_pruner'] = critic_pruner
+    logging.info(f"pruner_algorithm: {FLAGS.prune_algorithm}")
+    logging.info(f"algo: {algo}")
+    
 
-    summary_writer = SummaryWriter(
-        os.path.join(FLAGS.save_dir, run_name))
+    # summary_writer = SummaryWriter(
+    #     os.path.join(FLAGS.save_dir, run_name))
 
     if FLAGS.save_video:
         video_train_folder = os.path.join(FLAGS.save_dir, 'video', 'train')
@@ -100,11 +160,10 @@ def main(_):
                             env.action_space.sample()[np.newaxis], **kwargs)
     else:
         raise NotImplementedError()
-
+    
     replay_buffer = ReplayBuffer(env.observation_space, env.action_space,
                                  replay_buffer_size or FLAGS.max_steps)
 
-    eval_returns = []
     observation, done = env.reset(), False
     for i in tqdm.tqdm(range(1, FLAGS.max_steps + 1),
                        smoothing=0.1,
@@ -126,38 +185,28 @@ def main(_):
 
         if done:
             observation, done = env.reset(), False
-            for k, v in info['episode'].items():
-                summary_writer.add_scalar(f'training/{k}', v,
-                                          info['total']['timesteps'])
-
-            if 'is_success' in info:
-                summary_writer.add_scalar(f'training/success',
-                                          info['is_success'],
-                                          info['total']['timesteps'])
-
         if i >= FLAGS.start_training:
             for _ in range(FLAGS.updates_per_step):
                 batch = replay_buffer.sample(FLAGS.batch_size)
                 update_info = agent.update(batch)
 
             if i % FLAGS.log_interval == 0:
-                for k, v in update_info.items():
-                    summary_writer.add_scalar(f'training/{k}', v, i)
-                summary_writer.flush()
+                wandb.log(update_info, step=i)
 
         if i % FLAGS.eval_interval == 0:
             eval_stats = evaluate(agent, eval_env, FLAGS.eval_episodes)
+            wandb.log({'average_return': eval_stats['return']}, step=i)
 
-            for k, v in eval_stats.items():
-                summary_writer.add_scalar(f'evaluation/average_{k}s', v,
-                                          info['total']['timesteps'])
-            summary_writer.flush()
+            # for k, v in eval_stats.items():
+            #     summary_writer.add_scalar(f'evaluation/average_{k}s', v,
+            #                               info['total']['timesteps'])
+            # summary_writer.flush()
 
-            eval_returns.append(
-                (info['total']['timesteps'], eval_stats['return']))
-            np.savetxt(os.path.join(FLAGS.save_dir, f'{FLAGS.seed}.txt'),
-                       eval_returns,
-                       fmt=['%d', '%.1f'])
+            # eval_returns.append(
+            #     (info['total']['timesteps'], eval_stats['return']))
+            # np.savetxt(os.path.join(FLAGS.save_dir, f'{FLAGS.seed}.txt'),
+            #            eval_returns,
+            #            fmt=['%d', '%.1f'])
 
 
 if __name__ == '__main__':

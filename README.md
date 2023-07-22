@@ -99,47 +99,9 @@ If you experience out-of-memory errors, especially with enabled video saving, pl
 XLA_PYTHON_CLIENT_MEM_FRACTION=0.80 python ...
 ```
 
-If you run your code on a remote machine and want to save videos for DeepMind Control Suite, please use EGL for rendering:
-```bash
-MUJOCO_GL=egl python train.py --env_name=cheetah-run --save_dir=./tmp/ --save_video
-```
-
-# Tensorboard
-
-Launch tensorboard to see training and evaluation logs
-
-```bash
-tensorboard --logdir=./tmp/
-```
-
-# Results
-
-## Continous control from states
-
-![gym](./learning_curves/images/results.png)
-
-## Continous control from pixels
-
-![gym](./learning_curves/images/results_drq.png)
-
-
-# Docker
-
-## Build
-
-Copy your MuJoCo key to ./vendor
-
-```bash
-cd remote
-docker build -t ikostrikov/jaxrl . -f Dockerfile 
-```
-
-## Test
-```bash
- sudo docker run -v <examples-dir>:/jaxrl/ ikostrikov/jaxrl:latest python /jaxrl/train.py --env_name=HalfCheetah-v2 --save_dir=/jaxrl/tmp/
-
 # On GPU
- sudo docker run --rm --gpus all -v <examples-dir>:/jaxrl/ --gpus=all ikostrikov/jaxrl:latest python /jaxrl/train.py --env_name=HalfCheetah-v2 --save_dir=/jaxrl/tmp/
+```
+python examples/train.py --env_name=HalfCheetah-v2 --save_dir=tmp/ --prune_algorithm=no_prune
 ```
 
 # Contributing

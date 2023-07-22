@@ -20,19 +20,22 @@ class ValueCritic(nn.Module):
 class Critic(nn.Module):
     hidden_dims: Sequence[int]
     activations: Callable[[jnp.ndarray], jnp.ndarray] = nn.relu
+    layer_normalization: bool = False
 
     @nn.compact
     def __call__(self, observations: jnp.ndarray,
                  actions: jnp.ndarray) -> jnp.ndarray:
         inputs = jnp.concatenate([observations, actions], -1)
         critic = MLP((*self.hidden_dims, 1),
-                     activations=self.activations)(inputs)
+                     activations=self.activations,
+                     layer_normalization=self.layer_normalization)(inputs)
         return jnp.squeeze(critic, -1)
 
 
 class DoubleCritic(nn.Module):
     hidden_dims: Sequence[int]
     activations: Callable[[jnp.ndarray], jnp.ndarray] = nn.relu
+    layer_normalization: bool = False
     num_qs: int = 2
 
     @nn.compact
@@ -45,5 +48,6 @@ class DoubleCritic(nn.Module):
                              out_axes=0,
                              axis_size=self.num_qs)
         qs = VmapCritic(self.hidden_dims,
-                        activations=self.activations)(states, actions)
+                        activations=self.activations,
+                        layer_normalization=self.layer_normalization)(states, actions)
         return qs

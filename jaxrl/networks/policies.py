@@ -41,6 +41,7 @@ class NormalTanhPolicy(nn.Module):
     hidden_dims: Sequence[int]
     action_dim: int
     state_dependent_std: bool = True
+    layer_normalization: bool = False
     dropout_rate: Optional[float] = None
     final_fc_init_scale: float = 1.0
     log_std_min: Optional[float] = None
@@ -55,6 +56,7 @@ class NormalTanhPolicy(nn.Module):
                  training: bool = False) -> tfd.Distribution:
         outputs = MLP(self.hidden_dims,
                       activate_final=True,
+                      layer_normalization=self.layer_normalization,
                       dropout_rate=self.dropout_rate)(observations,
                                                       training=training)
 

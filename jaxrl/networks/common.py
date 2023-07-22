@@ -24,12 +24,15 @@ class MLP(nn.Module):
     hidden_dims: Sequence[int]
     activations: Callable[[jnp.ndarray], jnp.ndarray] = nn.relu
     activate_final: int = False
+    layer_normalization: bool = False
     dropout_rate: Optional[float] = None
-
+    
     @nn.compact
     def __call__(self, x: jnp.ndarray, training: bool = False) -> jnp.ndarray:
         for i, size in enumerate(self.hidden_dims):
             x = nn.Dense(size, kernel_init=default_init())(x)
+            if self.layer_normalization:
+                x = nn.LayerNorm()(x) # add layer normalization 
             if i + 1 < len(self.hidden_dims) or self.activate_final:
                 x = self.activations(x)
                 if self.dropout_rate is not None:
@@ -57,7 +60,7 @@ class Model:
         variables = model_def.init(*inputs)
 
         _, params = variables.pop('params')
-
+        params = variables['params']
         if tx is not None:
             opt_state = tx.init(params)
         else:
@@ -71,7 +74,7 @@ class Model:
 
     def __call__(self, *args, **kwargs):
         return self.apply_fn({'params': self.params}, *args, **kwargs)
-
+    
     def apply_gradient(
             self,
             loss_fn: Optional[Callable[[Params], Any]] = None,
