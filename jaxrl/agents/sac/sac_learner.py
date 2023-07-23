@@ -2,6 +2,8 @@
 
 import functools
 from typing import Optional, Sequence, Tuple
+import os
+import logging
 
 import jax
 import jax.numpy as jnp
@@ -142,3 +144,16 @@ class SACLearner(object):
         self.temp = new_temp
 
         return info
+    
+    def save_networks(self, env_name, save_dir='./models'):
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+        self.actor.save(save_dir + '/' + str(env_name) + 'actor_.ckpt')
+        self.critic.save(save_dir + '/' + str(env_name) + 'critic_.ckpt')
+        self.target_critic.save(save_dir + '/' + str(env_name) + 'target_critic_.ckpt')
+        
+    def load_networks(self, env_name, save_dir='./models', checkpoint_step=0):
+        save_dir = save_dir + '/' + str(env_name)
+        self.actor = self.actor.load(save_dir + 'actor_' + str(checkpoint_step)+ '.ckpt')
+        self.critic = self.critic.load(save_dir + 'critic_' + str(checkpoint_step)+ '.ckpt')
+        self.target_critic = self.target_critic.load(save_dir + 'target_critic_' +str(checkpoint_step)+ '.ckpt')

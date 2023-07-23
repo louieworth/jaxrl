@@ -8,6 +8,7 @@ sys.path.append(BASE_DIR)
 
 import numpy as np
 import tqdm
+import logging
 from absl import app, flags
 from ml_collections import config_flags
 from tensorboardX import SummaryWriter
@@ -37,6 +38,10 @@ flags.DEFINE_boolean('save_video', False, 'Save videos during evaluation.')
 flags.DEFINE_boolean('track', True, 'Track experiments with Weights and Biases.')
 flags.DEFINE_string('wandb_project_name', "sparse_rl", "The wandb's project name.")
 flags.DEFINE_string('wandb_entity', "louis_t0", "the entity (team) of wandb's project")
+
+flags.DEFINE_boolean('save_model', True, 'Save model during training.')
+flags.DEFINE_integer('save_model_interval', int(1e6), 'Save model interval.')
+flags.DEFINE_boolean('load_model', False, 'Load model during training.')
 config_flags.DEFINE_config_file(
     'config',
     'examples/configs/sac_default.py',
@@ -115,6 +120,11 @@ def main(_):
     else:
         raise NotImplementedError()
     
+    if FLAGS.load_model:
+        logging.info(f"load the model")
+        # agent.load_avg_networks(env_name=FLAGS.env_name)
+        agent.load_networks(env_name=FLAGS.env_name)
+    
     replay_buffer = ReplayBuffer(env.observation_space, env.action_space,
                                  replay_buffer_size or FLAGS.max_steps)
 
@@ -150,6 +160,13 @@ def main(_):
         if i % FLAGS.eval_interval == 0:
             eval_stats = evaluate(agent, eval_env, FLAGS.eval_episodes)
             wandb.log({'average_return': eval_stats['return']}, step=i)
+            
+        if FLAGS.save_model and i % FLAGS.save_model_interval == 0:
+            logging.info(f"save the model")
+            agent.save_networks(FLAGS.env_name)
+
+
+            # agent.load_saved_model(actor_name='actor_0.npy', critic_name='critic_0.npy', target_critic_name='target_critic_0.npy')
 
             # for k, v in eval_stats.items():
             #     summary_writer.add_scalar(f'evaluation/average_{k}s', v,

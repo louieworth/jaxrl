@@ -133,3 +133,4 @@ dmypy.json
 .pyre/
 .vscode/launch.json
 nohup.out
+run.bash
