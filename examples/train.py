@@ -4,6 +4,7 @@ import random
 import time
 import logging
 import IPython
+from pathlib import Path
 
 import numpy as np
 import tqdm
@@ -19,7 +20,7 @@ from jaxrl.agents import (AWACLearner, DDPGLearner, REDQLearner, SACLearner,
                           SACV1Learner)
 from jaxrl.datasets import ReplayBuffer
 from jaxrl.evaluation import evaluate
-from jaxrl.utils import make_env
+from jaxrl.utils import make_env, calculate_scores, Log
 
 import jaxpruner
 import ml_collections
@@ -33,7 +34,7 @@ flags.DEFINE_integer('seed', 42, 'Random seed.')
 flags.DEFINE_integer('eval_episodes', 10,
                      'Number of episodes used for evaluation.')
 flags.DEFINE_integer('log_interval', 1000, 'Logging interval.')
-flags.DEFINE_integer('eval_interval', 5000, 'Eval interval.')
+flags.DEFINE_integer('eval_interval', int(1e4), 'Eval interval.')
 flags.DEFINE_integer('batch_size', 256, 'Mini batch size.')
 flags.DEFINE_integer('updates_per_step', 1, 'Gradient updates per step.')
 flags.DEFINE_integer('max_steps', int(1e6), 'Number of training steps.')
@@ -42,7 +43,7 @@ flags.DEFINE_integer('start_training', int(1e4),
 flags.DEFINE_boolean('layer_normalization', False, 'Use layer normalization.')
 flags.DEFINE_boolean('tqdm', True, 'Use tqdm progress bar.')
 flags.DEFINE_boolean('save_video', False, 'Save videos during evaluation.')
-flags.DEFINE_boolean('track', True, 'Track experiments with Weights and Biases.')
+flags.DEFINE_boolean('track', False, 'Track experiments with Weights and Biases.')
 flags.DEFINE_string('wandb_project_name', "sparse_rl", "The wandb's project name.")
 flags.DEFINE_string('wandb_entity', "louis_t0", "the entity (team) of wandb's project")
 
@@ -53,10 +54,12 @@ flags.DEFINE_string("prune_algorithm", "no_prune", "pruning algorithm")
 # 'global_magnitude', 'global_saliency', 'static_sparse', 'rigl','set')
 flags.DEFINE_integer("prune_update_freq", int(1e4), "update frequency")
 flags.DEFINE_integer("prune_update_end_step", int(1e6), "update end step")
-flags.DEFINE_integer("prune_update_start_step", int(1e4), "update start step")
-flags.DEFINE_float("prune_actor_sparsity", 0.95, "sparsity")
-flags.DEFINE_float("prune_critic_sparsity", 0.95, "sparsity")
+flags.DEFINE_integer("prune_update_start_step", int(2e5), "update start step")
+flags.DEFINE_float("prune_actor_sparsity", 0.3, "sparsity")
+flags.DEFINE_float("prune_critic_sparsity", 0.3, "sparsity")
 flags.DEFINE_string("prune_dist_type", "erk", "distribution type")
+flags.DEFINE_boolean('negative_side_variace', False, 'compute negative side variance')
+
 
 # config definition
 config_flags.DEFINE_config_file(
@@ -99,8 +102,10 @@ def main(_):
         )
         wandb.config.update({"algo": algo})
         
+    log = Log(Path('sparse_negative_side_variance')/FLAGS.env_name, kwargs)
+    log(f'Log dir: {log.dir}')
+        
     sparsity_config = ml_collections.ConfigDict()
-    # TODO 这个pruning updates是如何的？和training updates有什么区别？
     sparsity_config.algorithm = FLAGS.prune_algorithm
     sparsity_config.update_freq = FLAGS.prune_update_freq
     sparsity_config.update_end_step = FLAGS.prune_update_end_step
@@ -116,7 +121,6 @@ def main(_):
     kwargs['critic_pruner'] = critic_pruner
     logging.info(f"pruner_algorithm: {FLAGS.prune_algorithm}")
     logging.info(f"algo: {algo}")
-    
 
     # summary_writer = SummaryWriter(
     #     os.path.join(FLAGS.save_dir, run_name))
@@ -190,23 +194,29 @@ def main(_):
                 batch = replay_buffer.sample(FLAGS.batch_size)
                 update_info = agent.update(batch)
 
-            if i % FLAGS.log_interval == 0:
+            if FLAGS.track and i % FLAGS.log_interval == 0:
                 wandb.log(update_info, step=i)
 
         if i % FLAGS.eval_interval == 0:
             eval_stats = evaluate(agent, eval_env, FLAGS.eval_episodes)
-            wandb.log({'average_return': eval_stats['return']}, step=i)
-
-            # for k, v in eval_stats.items():
-            #     summary_writer.add_scalar(f'evaluation/average_{k}s', v,
-            #                               info['total']['timesteps'])
-            # summary_writer.flush()
-
-            # eval_returns.append(
-            #     (info['total']['timesteps'], eval_stats['return']))
-            # np.savetxt(os.path.join(FLAGS.save_dir, f'{FLAGS.seed}.txt'),
-            #            eval_returns,
-            #            fmt=['%d', '%.1f'])
+            if FLAGS.track:
+                wandb.log({'average_return': eval_stats['return']}, step=i)
+            if FLAGS.negative_side_variace:
+                sparse_actor_layer_0, sparse_actor_layer_1, sparse_actor_layer_2, sparse_actor_layer_3, sparse_actor_total = calculate_scores(agent.actor.params, negative_bias=True, is_actor=True)
+                sparse_critic_layer_0, sparse_critic_layer_1, sparse_critic_layer_2, sparse_critic_total = calculate_scores(agent.critic.params, negative_bias=True, is_actor=False)
+                log.row({
+                         'sparse_actor_layer_0': sparse_actor_layer_0,
+                         'sparse_actor_layer_1': sparse_actor_layer_1,
+                         'sparse_actor_layer_2': sparse_actor_layer_2,
+                         'sparse_actor_layer_3': sparse_actor_layer_3,
+                         'sparse_critic_layer_0': sparse_critic_layer_0,
+                         'sparse_critic_layer_1': sparse_critic_layer_1,
+                         'sparse_critic_layer_2': sparse_critic_layer_2,
+                         'sparse_actor_total': sparse_actor_total,
+                         'sparse_critic_total': sparse_critic_total,
+                         'average_return': eval_stats['return'],
+                         'sparsity': update_info['critic_sparsity']
+                         })
 
 
 if __name__ == '__main__':
