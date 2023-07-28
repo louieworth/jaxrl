@@ -10,6 +10,7 @@ sys.path.append(BASE_DIR)
 import numpy as np
 import tqdm
 import logging
+import jax.numpy as jnp
 from absl import app, flags
 from ml_collections import config_flags
 import jaxpruner
@@ -22,7 +23,7 @@ from jaxrl.utils import make_env, Log, calculate_scores
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('env_name', 'HalfCheetah-v2', 'Environment name.')
+flags.DEFINE_string('env_name', 'HalfCheetah-v4', 'Environment name.')
 flags.DEFINE_string('save_dir', './tmp/', 'Tensorboard logging dir.')
 flags.DEFINE_integer('seed', 42, 'Random seed.')
 flags.DEFINE_integer('eval_episodes', 10,
@@ -84,13 +85,11 @@ def main(_):
         wandb.config.update({"algo": algo})
         
     
-    log = Log(Path('negative_side_variance')/FLAGS.env_name, kwargs)
+    log = Log(Path('max_performance_gap_0.1')/FLAGS.env_name, kwargs)
     log(f'Log dir: {log.dir}')
     
     # create the pruner
-    sparsity_distribution = functools.partial(
-        jaxpruner.sparsity_distributions.uniform, sparsity=FLAGS.init_sparsity)
-    pruner = jaxpruner.MagnitudePruning(sparsity_distribution_fn=sparsity_distribution)
+
     # Gradient based pruning
     # pruner = jaxpruner.SaliencyPruning(sparsity_distribution_fn=sparsity_distribution)
 
@@ -134,67 +133,49 @@ def main(_):
     else:
         raise NotImplementedError()
     
-    if FLAGS.load_model:
-        logging.info(f"load the model")
-        # agent.load_avg_networks(env_name=FLAGS.env_name)
-        agent.load_networks(env_name=FLAGS.env_name)
+    step = int(1e5)
+    sparsity = 0
+    last_step = step
+    last_sparsity = sparsity
+    last_return = 0
+    last_sparse_return = 0
+    last_performance_gap_ratio = 0
     
-    replay_buffer = ReplayBuffer(env.observation_space, env.action_space,
-                                 replay_buffer_size or FLAGS.max_steps)
-
-    observation, done = env.reset(), False
-    for i in tqdm.tqdm(range(1, FLAGS.max_steps + 1),
-                       smoothing=0.1,
-                       disable=not FLAGS.tqdm):
-        if i < FLAGS.start_training:
-            action = env.action_space.sample()
-        else:
-            action = agent.sample_actions(observation)
-        next_observation, reward, done, info = env.step(action)
-
-        if not done or 'TimeLimit.truncated' in info:
-            mask = 1.0
-        else:
-            mask = 0.0
-
-        replay_buffer.insert(observation, action, reward, mask, float(done),
-                             next_observation)
-        observation = next_observation
-
-        if done:
-            observation, done = env.reset(), False
-        if i >= FLAGS.start_training:
-            for _ in range(FLAGS.updates_per_step):
-                batch = replay_buffer.sample(FLAGS.batch_size)
-                update_info = agent.update(batch)
-
-            if i % FLAGS.log_interval == 0:
-                wandb.log(update_info, step=i)
+    while step < FLAGS.max_steps:
+        # agent.load_avg_networks(env_name=FLAGS.env_name)
         
-        # if i % FLAGS.instant_sparsity_interval == 0:
-        #     # first save the vanilla models
-        #     sparsity = FLAGS.init_sparsity + (
-        #         FLAGS.target_sparsity - FLAGS.init_sparsity) * i / FLAGS.max_steps
-        #     sparsity_distribution = functools.partial(
-        #         jaxpruner.sparsity_distributions.uniform, sparsity=sparsity)
-        #     pruner = jaxpruner.MagnitudePruning(sparsity_distribution_fn=sparsity_distribution)
-        #     agent.update_instant_sparsity(FLAGS.env_name, i, sparsity, pruner)
+        while sparsity < 1:
+            agent.load_networks(env_name=FLAGS.env_name, additional_info=f"step_{step}")
+            
+            sparsity_distribution = functools.partial(
+            jaxpruner.sparsity_distributions.uniform, sparsity=sparsity)
+            pruner = jaxpruner.MagnitudePruning(sparsity_distribution_fn=sparsity_distribution)
         
+            agent.update_instant_sparsity(FLAGS.env_name, step, sparsity, pruner)
+            eval_stats = evaluate(agent, eval_env, 100, sparse_model=False)
+            sparse_eval_stats = evaluate(agent, eval_env, 100, sparse_model=True)
+            performance_gap_ratio =  jnp.abs(eval_stats['return'] - sparse_eval_stats['return']) /  eval_stats['return']
+             
+            if performance_gap_ratio > 0.1:
+                log.row({'step': last_step, 
+                        'sparsity': last_sparsity, 
+                        'return': last_return,
+                        'sparse_return': last_sparse_return,
+                        'performance_gap_ratio': last_performance_gap_ratio})
+                log(f"WARING: step: {step}, sparsity: {sparsity}, return: {eval_stats['return']}, sparse_return: {sparse_eval_stats['return']}, performance_gap_ratio: {performance_gap_ratio}")
+                sparsity = 0
+                break
+            else:
+                sparsity += 0.01
+                last_step = step
+                last_sparsity = sparsity
+                last_return = eval_stats['return']
+                last_sparse_return = sparse_eval_stats['return']
+                last_performance_gap_ratio = performance_gap_ratio
+                log(f"step: {step}, sparsity: {sparsity}, return: {eval_stats['return']}, sparse_return: {sparse_eval_stats['return']}, performance_gap_ratio: {performance_gap_ratio}")
+        step += int(1e5)
         
-        if i % FLAGS.eval_interval == 0:
-            eval_stats = evaluate(agent, eval_env, FLAGS.eval_episodes, sparse_model=False)
-            sparse_eval_stats = evaluate(agent, eval_env, FLAGS.eval_episodes, sparse_model=True)
-            actor_sparsity_level = jaxpruner.summarize_sparsity(agent.copy_actor.params, only_total_sparsity=True)
-            critic_sparsity_level = jaxpruner.summarize_sparsity(agent.copy_critic.params, only_total_sparsity=True)
-            wandb.log({'average_return': eval_stats['return']
-                        'sparse_average_return': sparse_eval_stats['return'],
-                        'actor_sparsity_level': actor_sparsity_level,
-                        'critic_sparsity_level': critic_sparsity_level}, step=i)
-            log.row({'normalized_return': eval_stats['return']})
-        
-        if FLAGS.save_model and i % FLAGS.save_model_interval == 0:
-            logging.info(f"save the model")
-            agent.save_networks(FLAGS.env_name, additional_info=f"step_{i}")
+
             
 if __name__ == '__main__':
     app.run(main)

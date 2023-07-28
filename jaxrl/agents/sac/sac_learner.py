@@ -7,6 +7,7 @@ import logging
 
 import jax
 import jax.numpy as jnp
+from jax.tree_util import tree_flatten, tree_unflatten
 import numpy as np
 import optax
 
@@ -105,6 +106,16 @@ class SACLearner(object):
                               tx=optax.adam(learning_rate=critic_lr))
         target_critic = Model.create(
             critic_def, inputs=[critic_key, observations, actions])
+        
+        copy_actor = Model.create(actor_def,
+                             inputs=[actor_key, observations],
+                             tx=optax.adam(learning_rate=actor_lr))
+
+        copy_critic = Model.create(critic_def,
+                              inputs=[critic_key, observations, actions],
+                              tx=optax.adam(learning_rate=actor_lr))
+        copy_target_critic = Model.create(critic_def, 
+                                     inputs=[critic_key, observations, actions])
 
         temp = Model.create(temperature.Temperature(init_temperature),
                             inputs=[temp_key],
@@ -115,6 +126,10 @@ class SACLearner(object):
         self.target_critic = target_critic
         self.temp = temp
         self.rng = rng
+        
+        self.copy_actor = copy_actor
+        self.copy_critic = copy_critic
+        self.copy_target_critic = copy_target_critic
 
         self.step = 1
 
@@ -128,6 +143,18 @@ class SACLearner(object):
 
         actions = np.asarray(actions)
         return np.clip(actions, -1, 1)
+    
+    def sparse_model_sample_actions(self,
+                       observations: np.ndarray,
+                       temperature: float = 1.0) -> jnp.ndarray:
+        rng, actions = policies.sample_actions(self.rng, self.copy_actor.apply_fn,
+                                               self.copy_actor.params, observations,
+                                               temperature)
+        self.rng = rng
+
+        actions = np.asarray(actions)
+        return np.clip(actions, -1, 1)
+    
 
     def update(self, batch: Batch) -> InfoDict:
         self.step += 1
@@ -145,15 +172,58 @@ class SACLearner(object):
 
         return info
     
-    def save_networks(self, env_name, save_dir='./models'):
+    def update_instant_sparsity(self, env_name, step, sparsity, pruner):
+        # self.save_networks(env_name, additional_info=f"step_{step}")
+        
+        additional_info = 'sparsity_' + str(sparsity) + '_step_' + str(step)
+        self.copy_actor = self.copy_actor.replace(step=self.actor.step, 
+                                params=self.actor.params, 
+                                opt_state=self.actor.opt_state)
+        self.copy_critic = self.copy_critic.replace(step=self.critic.step,
+                                params=self.critic.params,
+                                opt_state=self.critic.opt_state)
+        self.copy_target_critic = self.copy_target_critic.replace(step=self.target_critic.step,
+                                        params=self.copy_target_critic.params,
+                                        opt_state=self.copy_target_critic.opt_state)
+        
+        pruned_actor_params, _ = pruner.instant_sparsify(self.copy_actor.params)
+        pruned_critic_params, _ = pruner.instant_sparsify(self.copy_critic.params)
+        pruned_target_critic_params, _ = pruner.instant_sparsify(self.copy_target_critic.params)
+        self.copy_actor = self.copy_actor.replace(params=pruned_actor_params)
+        self.copy_critic = self.copy_critic.replace(params=pruned_critic_params)
+        self.copy_target_critic = self.copy_target_critic.replace(params=pruned_target_critic_params)
+        
+        # self.save_sparse_copy_networks(env_name, additional_info=additional_info)
+        
+    def save_networks(self, env_name, additional_info=None, save_dir='./models'):
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
-        self.actor.save(save_dir + '/' + str(env_name) + 'actor_.ckpt')
-        self.critic.save(save_dir + '/' + str(env_name) + 'critic_.ckpt')
-        self.target_critic.save(save_dir + '/' + str(env_name) + 'target_critic_.ckpt')
+        if additional_info:
+            save_dir = save_dir + '/' + str(env_name) + '_' + str(additional_info)
+        else:
+            save_dir = save_dir + '/' + str(env_name)
+        self.actor.save(save_dir + '_actor.ckpt')
+        self.critic.save(save_dir + '_critic.ckpt')
+        self.target_critic.save(save_dir + '_target_critic.ckpt')
         
-    def load_networks(self, env_name, save_dir='./models', checkpoint_step=0):
-        save_dir = save_dir + '/' + str(env_name)
-        self.actor = self.actor.load(save_dir + 'actor_' + str(checkpoint_step)+ '.ckpt')
-        self.critic = self.critic.load(save_dir + 'critic_' + str(checkpoint_step)+ '.ckpt')
-        self.target_critic = self.target_critic.load(save_dir + 'target_critic_' +str(checkpoint_step)+ '.ckpt')
+    def save_sparse_copy_networks(self, env_name, additional_info=None, save_dir='./models'):
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+        if additional_info:
+            save_dir = save_dir + '/sparse_' + str(env_name) + '_' + str(additional_info)
+        else:
+            save_dir = save_dir + '/' + str(env_name)
+        self.copy_actor.save(save_dir + '_actor.ckpt')
+        self.copy_critic.save(save_dir + '_critic.ckpt')
+        self.copy_target_critic.save(save_dir + '_target_critic.ckpt')
+        
+    def load_networks(self, env_name, additional_info=None, save_dir='./models'):
+        if additional_info:
+            save_dir = save_dir + '/' + str(env_name) + '_' + str(additional_info)
+        else:
+            save_dir = save_dir + '/' + str(env_name)
+        self.actor = self.actor.load(save_dir + '_actor.ckpt')
+        self.critic = self.critic.load(save_dir + '_critic.ckpt')
+        self.target_critic = self.target_critic.load(save_dir + '_target_critic.ckpt')
+        
+
