@@ -4,6 +4,7 @@ wandb
 max_performance_gap
 max_performance_gap_0.1
 negative_side_variance
+plot 
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
