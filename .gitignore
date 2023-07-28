@@ -2,6 +2,8 @@
 tmp
 wandb
 nohup.out
+models
+negative_side_variance
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
