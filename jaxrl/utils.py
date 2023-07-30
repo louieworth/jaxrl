@@ -151,7 +151,7 @@ def calculate_scores(params, sparse_state=None,
     assert not (negative_bias and l2_norm), "only one of normalize OR l1_norm can be True."
     if negative_bias:
       param_magnitudes = jax.tree_map(lambda p: jnp.abs(p), params)
-      param_magnitudes = jax.tree_map(lambda p: loss(p - jnp.mean(p)), param_magnitudes)
+      param_magnitudes = jax.tree_map(lambda p: loss((p - jnp.mean(p))/jnp.mean(p)), param_magnitudes)
     #   param_magnitudes = jax.tree_map(lambda p: p, param_magnitudes)
       if is_actor:
         kernel_magnitudes = [jnp.sum(mag) for mag in jax.tree_util.tree_leaves(param_magnitudes) if len(mag.shape) > 1]

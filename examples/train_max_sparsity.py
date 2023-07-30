@@ -133,16 +133,13 @@ def main(_):
     else:
         raise NotImplementedError()
     
-    step = int(1e5)
-    sparsity = 0
-    last_step = step
-    last_sparsity = sparsity
-    last_return = 0
-    last_sparse_return = 0
-    last_performance_gap_ratio = 0
+    last_step = step = int(1e5)
+
     
     while step < FLAGS.max_steps:
         # agent.load_avg_networks(env_name=FLAGS.env_name)
+        last_sparsity = sparsity = 0
+        last_sparse_return = last_return = 0
         
         while sparsity < 1:
             agent.load_networks(env_name=FLAGS.env_name, additional_info=f"step_{step}")
@@ -152,8 +149,8 @@ def main(_):
             pruner = jaxpruner.MagnitudePruning(sparsity_distribution_fn=sparsity_distribution)
         
             agent.update_instant_sparsity(FLAGS.env_name, step, sparsity, pruner)
-            eval_stats = evaluate(agent, eval_env, 100, sparse_model=False)
-            sparse_eval_stats = evaluate(agent, eval_env, 100, sparse_model=True)
+            eval_stats = evaluate(agent, eval_env, 50, sparse_model=False)
+            sparse_eval_stats = evaluate(agent, eval_env, 50, sparse_model=True)
             performance_gap_ratio =  jnp.abs(eval_stats['return'] - sparse_eval_stats['return']) /  eval_stats['return']
              
             if performance_gap_ratio > 0.1:
