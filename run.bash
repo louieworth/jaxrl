@@ -10,10 +10,11 @@ seeds=4
 # XLA_PYTHON_CLIENT_MEM_FRACTION=0.15
 # for env in "${envs[@]}"; do
 for seed in $(seq 0 $((seeds-1))); do
-    CUDA_VISIBLE_DEVICES=1 python examples/train.py \
-    --env_name="HalfCheetah-v4" \
+    CUDA_VISIBLE_DEVICES=0 python examples/train.py \
+    --env_name="finger-turn_hard" \
     --seed=$seed \
-    --negative_side_variace=True 
+    --save_model=False \
+    --negative_side_variace=True
 done
 # done
 

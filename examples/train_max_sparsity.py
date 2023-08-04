@@ -26,7 +26,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string('env_name', 'HalfCheetah-v4', 'Environment name.')
 flags.DEFINE_string('save_dir', './tmp/', 'Tensorboard logging dir.')
 flags.DEFINE_integer('seed', 42, 'Random seed.')
-flags.DEFINE_integer('eval_episodes', 10,
+flags.DEFINE_integer('eval_episodes', 50,
                      'Number of episodes used for evaluation.')
 flags.DEFINE_integer('log_interval', 1000, 'Logging interval.')
 flags.DEFINE_integer('eval_interval', 5000, 'Eval interval.')
@@ -42,9 +42,10 @@ flags.DEFINE_string('wandb_project_name', "sparse_rl", "The wandb's project name
 flags.DEFINE_string('wandb_entity', "louis_t0", "the entity (team) of wandb's project")
 flags.DEFINE_boolean('negative_weight', True, 'Whether to calculate the negative weight')
 flags.DEFINE_integer('negative_weight_interval', int(2e4), 'Interval to calculate the negative weight')
+flags.DEFINE_float('gate_ratio', 0.1, 'performance gap ratio')
 
-flags.DEFINE_boolean('save_model', True, 'Save model during training.')
-flags.DEFINE_integer('save_model_interval', int(1e6), 'Save model interval.')
+flags.DEFINE_boolean('save_model', False, 'Save model during training.')
+flags.DEFINE_integer('save_model_interval', int(2e4), 'Save model interval.')
 flags.DEFINE_boolean('load_model', False, 'Load model during training.')
 flags.DEFINE_integer('instant_sparsity_interval', int(1e4), 'Reset interval for the model.')
 
@@ -85,7 +86,7 @@ def main(_):
         wandb.config.update({"algo": algo})
         
     
-    log = Log(Path('max_performance_gap_0.1')/FLAGS.env_name, kwargs)
+    log = Log(Path(f'max_performance_gap_{FLAGS.gate_ratio}')/FLAGS.env_name, kwargs)
     log(f'Log dir: {log.dir}')
     
     # create the pruner
@@ -133,27 +134,27 @@ def main(_):
     else:
         raise NotImplementedError()
     
-    last_step = step = int(1e5)
+    last_step = step = int(2e4)
 
     
-    while step < FLAGS.max_steps:
+    while step <= FLAGS.max_steps:
         # agent.load_avg_networks(env_name=FLAGS.env_name)
         last_sparsity = sparsity = 0
-        last_sparse_return = last_return = 0
+        last_sparse_return = last_return = last_performance_gap_ratio = 0
         
         while sparsity < 1:
-            agent.load_networks(env_name=FLAGS.env_name, additional_info=f"step_{step}")
+            agent.load_networks(env_name=FLAGS.env_name, additional_info=f"step_{step}_seed{FLAGS.seed}")
             
             sparsity_distribution = functools.partial(
             jaxpruner.sparsity_distributions.uniform, sparsity=sparsity)
             pruner = jaxpruner.MagnitudePruning(sparsity_distribution_fn=sparsity_distribution)
         
             agent.update_instant_sparsity(FLAGS.env_name, step, sparsity, pruner)
-            eval_stats = evaluate(agent, eval_env, 50, sparse_model=False)
-            sparse_eval_stats = evaluate(agent, eval_env, 50, sparse_model=True)
+            eval_stats = evaluate(agent, eval_env, FLAGS.eval_episodes, sparse_model=False)
+            sparse_eval_stats = evaluate(agent, eval_env, FLAGS.eval_episodes, sparse_model=True)
             performance_gap_ratio =  jnp.abs(eval_stats['return'] - sparse_eval_stats['return']) /  eval_stats['return']
              
-            if performance_gap_ratio > 0.1:
+            if performance_gap_ratio > FLAGS.gate_ratio:
                 log.row({'step': last_step, 
                         'sparsity': last_sparsity, 
                         'return': last_return,
@@ -170,7 +171,7 @@ def main(_):
                 last_sparse_return = sparse_eval_stats['return']
                 last_performance_gap_ratio = performance_gap_ratio
                 log(f"step: {step}, sparsity: {sparsity}, return: {eval_stats['return']}, sparse_return: {sparse_eval_stats['return']}, performance_gap_ratio: {performance_gap_ratio}")
-        step += int(1e5)
+        step += int(2e4)
         
 
             

@@ -41,7 +41,7 @@ flags.DEFINE_string('wandb_project_name', "sparse_rl", "The wandb's project name
 flags.DEFINE_string('wandb_entity', "louis_t0", "the entity (team) of wandb's project")
 
 flags.DEFINE_boolean('save_model', False, 'Save model during training.')
-flags.DEFINE_integer('save_model_interval', int(1e6), 'Save model interval.')
+flags.DEFINE_integer('save_model_interval', int(2e4), 'Save model interval.')
 flags.DEFINE_boolean('load_model', False, 'Load model during training.')
 flags.DEFINE_boolean('negative_side_variace', False, 'Whether to calculate the negative side variance')
 # flags.DEFINE_integer('instant_sparsity_interval', int(1e4), 'Reset interval for the model.')
@@ -123,6 +123,7 @@ def main(_):
                             env.observation_space.sample()[np.newaxis],
                             env.action_space.sample()[np.newaxis], **kwargs)
     else:
+        
         raise NotImplementedError()
     
     if FLAGS.load_model:
@@ -208,7 +209,7 @@ def main(_):
                 
         if FLAGS.save_model and i % FLAGS.save_model_interval == 0:
             logging.info(f"save the model")
-            agent.save_networks(FLAGS.env_name, additional_info=f"step_{i}")
+            agent.save_networks(FLAGS.env_name, additional_info=f"step_{i}_seed{FLAGS.seed}")
             
 if __name__ == '__main__':
     app.run(main)
