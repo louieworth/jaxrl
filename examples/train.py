@@ -43,7 +43,7 @@ flags.DEFINE_integer('start_training', int(1e4),
 flags.DEFINE_boolean('layer_normalization', False, 'Use layer normalization.')
 flags.DEFINE_boolean('tqdm', True, 'Use tqdm progress bar.')
 flags.DEFINE_boolean('save_video', False, 'Save videos during evaluation.')
-flags.DEFINE_boolean('track', False, 'Track experiments with Weights and Biases.')
+flags.DEFINE_boolean('track', True, 'Track experiments with Weights and Biases.')
 flags.DEFINE_string('wandb_project_name', "sparse_rl", "The wandb's project name.")
 flags.DEFINE_string('wandb_entity', "louis_t0", "the entity (team) of wandb's project")
 
@@ -54,7 +54,7 @@ flags.DEFINE_string("prune_algorithm", "no_prune", "pruning algorithm")
 # 'global_magnitude', 'global_saliency', 'static_sparse', 'rigl','set')
 flags.DEFINE_integer("prune_update_freq", int(1e4), "update frequency")
 flags.DEFINE_integer("prune_update_end_step", int(1e6), "update end step")
-flags.DEFINE_integer("prune_update_start_step", int(2e5), "update start step")
+flags.DEFINE_integer("prune_update_start_step", int(1e4), "update start step")
 flags.DEFINE_float("prune_actor_sparsity", 0.3, "sparsity")
 flags.DEFINE_float("prune_critic_sparsity", 0.3, "sparsity")
 flags.DEFINE_string("prune_dist_type", "erk", "distribution type")
@@ -101,8 +101,9 @@ def main(_):
             save_code=True,
         )
         wandb.config.update({"algo": algo})
-        
-    log = Log(Path('sparse_negative_side_variance')/FLAGS.env_name, kwargs)
+    
+    log_config = {**kwargs, **{k: v for k, v in clean_config.items() if k not in kwargs}}
+    log = Log(Path('normalize_return')/FLAGS.env_name, log_config)
     log(f'Log dir: {log.dir}')
         
     sparsity_config = ml_collections.ConfigDict()
@@ -201,23 +202,7 @@ def main(_):
             eval_stats = evaluate(agent, eval_env, FLAGS.eval_episodes)
             if FLAGS.track:
                 wandb.log({'average_return': eval_stats['return']}, step=i)
-            if FLAGS.negative_side_variace:
-                sparse_actor_layer_0, sparse_actor_layer_1, sparse_actor_layer_2, sparse_actor_layer_3, sparse_actor_total = calculate_scores(agent.actor.params, negative_bias=True, is_actor=True)
-                sparse_critic_layer_0, sparse_critic_layer_1, sparse_critic_layer_2, sparse_critic_total = calculate_scores(agent.critic.params, negative_bias=True, is_actor=False)
-                log.row({
-                         'sparse_actor_layer_0': sparse_actor_layer_0,
-                         'sparse_actor_layer_1': sparse_actor_layer_1,
-                         'sparse_actor_layer_2': sparse_actor_layer_2,
-                         'sparse_actor_layer_3': sparse_actor_layer_3,
-                         'sparse_critic_layer_0': sparse_critic_layer_0,
-                         'sparse_critic_layer_1': sparse_critic_layer_1,
-                         'sparse_critic_layer_2': sparse_critic_layer_2,
-                         'sparse_actor_total': sparse_actor_total,
-                         'sparse_critic_total': sparse_critic_total,
-                         'average_return': eval_stats['return'],
-                         'sparsity': update_info['critic_sparsity']
-                         })
-
+                log.row({'average_return': eval_stats['return']})
 
 if __name__ == '__main__':
     app.run(main)
