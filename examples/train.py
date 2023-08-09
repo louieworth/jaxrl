@@ -41,7 +41,7 @@ flags.DEFINE_string('wandb_project_name', "sparse_rl", "The wandb's project name
 flags.DEFINE_string('wandb_entity', "louis_t0", "the entity (team) of wandb's project")
 
 flags.DEFINE_boolean('save_model', False, 'Save model during training.')
-flags.DEFINE_integer('save_model_interval', int(2e4), 'Save model interval.')
+flags.DEFINE_integer('save_model_interval', int(5e4), 'Save model interval.')
 flags.DEFINE_boolean('load_model', False, 'Load model during training.')
 flags.DEFINE_boolean('negative_side_variace', False, 'Whether to calculate the negative side variance')
 # flags.DEFINE_integer('instant_sparsity_interval', int(1e4), 'Reset interval for the model.')
@@ -82,7 +82,7 @@ def main(_):
         )
         wandb.config.update({"algo": algo})
         
-    log = Log(Path('negative_weight_variance')/FLAGS.env_name, kwargs)
+    log = Log(Path('negative_weight_variance')/f"{FLAGS.env_name}_updates_per_step_{FLAGS.updates_per_step}", kwargs)
     log(f'Log dir: {log.dir}')
     
     if FLAGS.save_video:
@@ -159,16 +159,18 @@ def main(_):
             for _ in range(FLAGS.updates_per_step):
                 batch = replay_buffer.sample(FLAGS.batch_size)
                 update_info = agent.update(batch)
+                if FLAGS.track:
+                    wandb.log(update_info, step=i)
         
         if i % FLAGS.eval_interval == 0:
             eval_stats = evaluate(agent, eval_env, FLAGS.eval_episodes, sparse_model=False)
-
-            # wandb.log({'average_return': eval_stats['return'],
-            #             'sparse_average_return': sparse_eval_stats['return'],
-            #             'actor_sparsity_level': actor_sparsity_level,
-            #             'critic_sparsity_level': critic_sparsity_level}, step=i)
+            if FLAGS.track:
+                wandb.log({'average_return': eval_stats['return'],
+                        'sparse_average_return': sparse_eval_stats['return'],
+                        'actor_sparsity_level': actor_sparsity_level,
+                        'critic_sparsity_level': critic_sparsity_level}, step=i)
             
-            # log.row({'normalized_return': eval_stats['return']})
+            log.row({'normalized_return': eval_stats['return']})
             if FLAGS.negative_side_variace:
                 sparsity = FLAGS.init_sparsity + (FLAGS.target_sparsity - FLAGS.init_sparsity) * i / FLAGS.max_steps
                 sparsity_distribution = functools.partial(
@@ -209,7 +211,7 @@ def main(_):
                 
         if FLAGS.save_model and i % FLAGS.save_model_interval == 0:
             logging.info(f"save the model")
-            agent.save_networks(FLAGS.env_name, additional_info=f"step_{i}_seed{FLAGS.seed}")
+            agent.save_networks(FLAGS.env_name, additional_info=f"step_{i}_seed{FLAGS.seed}", save_dir=f'./models/updates_per_step_{FLAGS.updates_per_step}')
             
 if __name__ == '__main__':
     app.run(main)
