@@ -3,11 +3,15 @@ tmp
 wandb
 nohup.out
 models
+models_32
 negative_side_variance
 max_performance_gap_0.1
 max_performance_gap_0.05
+max_performance_gap_0.1_update_ratio_32
+max_performance_gap_0.05_update_ratio_32
 negative_weight_variance
 normalize_return
+episode_return
 run.sh
 
 # Byte-compiled / optimized / DLL files
