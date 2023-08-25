@@ -19,14 +19,14 @@ from jaxrl.agents import (AWACLearner, DDPGLearner, REDQLearner, SACLearner,
                           SACV1Learner)
 from jaxrl.datasets import ReplayBuffer
 from jaxrl.evaluation import evaluate
-from jaxrl.utils import make_env, Log, calculate_scores
+from jaxrl.utils import make_env, Log, calculate_nwr
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('env_name', 'HalfCheetah-v4', 'Environment name.')
+flags.DEFINE_string('env_name', 'hopper-hop', 'Environment name.')
 flags.DEFINE_string('save_dir', './tmp/', 'Tensorboard logging dir.')
-flags.DEFINE_integer('seed', 42, 'Random seed.')
-flags.DEFINE_integer('eval_episodes', 50,
+flags.DEFINE_integer('seed', 0, 'Random seed.')
+flags.DEFINE_integer('eval_episodes', 10,
                      'Number of episodes used for evaluation.')
 flags.DEFINE_integer('log_interval', 1000, 'Logging interval.')
 flags.DEFINE_integer('eval_interval', 5000, 'Eval interval.')
@@ -37,12 +37,12 @@ flags.DEFINE_integer('start_training', int(1e4),
                      'Number of training steps to start training.')
 flags.DEFINE_boolean('tqdm', True, 'Use tqdm progress bar.')
 flags.DEFINE_boolean('save_video', False, 'Save videos during evaluation.')
-flags.DEFINE_boolean('track', True, 'Track experiments with Weights and Biases.')
+flags.DEFINE_boolean('track', False, 'Track experiments with Weights and Biases.')
 flags.DEFINE_string('wandb_project_name', "sparse_rl", "The wandb's project name.")
 flags.DEFINE_string('wandb_entity', "louis_t0", "the entity (team) of wandb's project")
 flags.DEFINE_boolean('negative_weight', True, 'Whether to calculate the negative weight')
 flags.DEFINE_integer('negative_weight_interval', int(2e4), 'Interval to calculate the negative weight')
-flags.DEFINE_float('gate_ratio', 0.1, 'performance gap ratio')
+flags.DEFINE_float('gate_ratio', 0.05, 'performance gap ratio')
 
 flags.DEFINE_boolean('save_model', False, 'Save model during training.')
 flags.DEFINE_integer('save_model_interval', int(2e4), 'Save model interval.')
@@ -64,16 +64,16 @@ def main(_):
     kwargs = dict(FLAGS.config)
     algo = kwargs.pop('algo')
     run_name = f"{FLAGS.env_name}__{algo}__{FLAGS.seed}"
+    clean_config = {}
+    clean_config['algo'] = algo
+    
+    clean_config['env_name'] = FLAGS.env_name
+    clean_config['seed'] = FLAGS.seed
+    clean_config['actor_lr']=kwargs['actor_lr']
+    clean_config['critic_lr']=kwargs['critic_lr']
+    clean_config['gate_ratio']=FLAGS.gate_ratio
     if FLAGS.track:
         import wandb
-        
-        clean_config = {}
-        clean_config['algo'] = algo
-        
-        clean_config['env_name'] = FLAGS.env_name
-        clean_config['seed'] = FLAGS.seed
-        clean_config['actor_lr']=kwargs['actor_lr']
-        clean_config['critic_lr']=kwargs['critic_lr']
 
         wandb.init(
             project=FLAGS.wandb_project_name,
@@ -86,7 +86,7 @@ def main(_):
         wandb.config.update({"algo": algo})
         
     
-    log = Log(Path(f'max_performance_gap_{FLAGS.gate_ratio}')/FLAGS.env_name, kwargs)
+    log = Log(Path(f'max_performance_gap_{FLAGS.gate_ratio}')/FLAGS.env_name, clean_config)
     log(f'Log dir: {log.dir}')
     
     # create the pruner
@@ -143,7 +143,7 @@ def main(_):
         last_sparse_return = last_return = last_performance_gap_ratio = 0
         
         while sparsity < 1:
-            agent.load_networks(env_name=FLAGS.env_name, additional_info=f"step_{step}_seed{FLAGS.seed}")
+            agent.load_networks(env_name=FLAGS.env_name, additional_info=f"step_{step}_seed{FLAGS.seed}", save_dir="./models")
             
             sparsity_distribution = functools.partial(
             jaxpruner.sparsity_distributions.uniform, sparsity=sparsity)
@@ -161,11 +161,10 @@ def main(_):
                         'sparse_return': last_sparse_return,
                         'performance_gap_ratio': last_performance_gap_ratio})
                 log(f"WARING: step: {step}, sparsity: {sparsity}, return: {eval_stats['return']}, sparse_return: {sparse_eval_stats['return']}, performance_gap_ratio: {performance_gap_ratio}")
-                sparsity = 0
+                last_step = step
                 break
             else:
                 sparsity += 0.01
-                last_step = step
                 last_sparsity = sparsity
                 last_return = eval_stats['return']
                 last_sparse_return = sparse_eval_stats['return']

@@ -18,7 +18,7 @@ from jaxrl.agents import (AWACLearner, DDPGLearner, REDQLearner, SACLearner,
                           SACV1Learner)
 from jaxrl.datasets import ReplayBuffer
 from jaxrl.evaluation import evaluate
-from jaxrl.utils import make_env, Log, calculate_scores
+from jaxrl.utils import make_env, Log, calculate_nwr
 
 FLAGS = flags.FLAGS
 
@@ -181,10 +181,10 @@ def main(_):
                 actor_sparsity_level = jaxpruner.summarize_sparsity(agent.copy_actor.params, only_total_sparsity=True)
                 critic_sparsity_level = jaxpruner.summarize_sparsity(agent.copy_critic.params, only_total_sparsity=True)
                 
-                actor_layer_0, actor_layer_1, actor_layer_2, actor_layer_3, actor_total = calculate_scores(agent.actor.params, negative_bias=True, is_actor=True)
-                critic_layer_0, critic_layer_1, critic_layer_2, critic_total = calculate_scores(agent.critic.params, negative_bias=True, is_actor=False)
-                sparse_actor_layer_0, sparse_actor_layer_1, sparse_actor_layer_2, sparse_actor_layer_3, sparse_actor_total = calculate_scores(agent.copy_actor.params, negative_bias=True, is_actor=True)
-                sparse_critic_layer_0, sparse_critic_layer_1, sparse_critic_layer_2, sparse_critic_total = calculate_scores(agent.copy_critic.params, negative_bias=True, is_actor=False)
+                actor_layer_0, actor_layer_1, actor_layer_2, actor_layer_3, actor_total = calculate_nwr(agent.actor.params, negative_bias=True, is_actor=True)
+                critic_layer_0, critic_layer_1, critic_layer_2, critic_total = calculate_nwr(agent.critic.params, negative_bias=True, is_actor=False)
+                sparse_actor_layer_0, sparse_actor_layer_1, sparse_actor_layer_2, sparse_actor_layer_3, sparse_actor_total = calculate_nwr(agent.copy_actor.params, negative_bias=True, is_actor=True)
+                sparse_critic_layer_0, sparse_critic_layer_1, sparse_critic_layer_2, sparse_critic_total = calculate_nwr(agent.copy_critic.params, negative_bias=True, is_actor=False)
                 
                 log.row({'actor_layer_0': actor_layer_0,
                          'sparse_actor_layer_0': sparse_actor_layer_0,

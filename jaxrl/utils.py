@@ -142,7 +142,7 @@ def loss(diff):
     weight = jnp.where(diff < 0, 1, 0)
     return weight * (diff**2)
            
-def calculate_scores(params, sparse_state=None, 
+def calculate_nwr(params, sparse_state=None, 
                                      grads=None, 
                                      negative_bias: bool = False,
                                      l2_norm: bool = False,
@@ -152,7 +152,6 @@ def calculate_scores(params, sparse_state=None,
     if negative_bias:
       param_magnitudes = jax.tree_map(lambda p: jnp.abs(p), params)
       param_magnitudes = jax.tree_map(lambda p: loss((p - jnp.mean(p))/jnp.mean(p)), param_magnitudes)
-    #   param_magnitudes = jax.tree_map(lambda p: p, param_magnitudes)
       if is_actor:
         kernel_magnitudes = [jnp.sum(mag) for mag in jax.tree_util.tree_leaves(param_magnitudes) if len(mag.shape) > 1]
         return kernel_magnitudes[0], kernel_magnitudes[1], kernel_magnitudes[2], kernel_magnitudes[3], sum(kernel_magnitudes)
