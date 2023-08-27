@@ -12,6 +12,7 @@ max_performance_gap_0.05_update_ratio_32
 negative_weight_variance
 normalize_return
 episode_return
+episode_return_batchnorm/
 run.sh
 
 # Byte-compiled / optimized / DLL files

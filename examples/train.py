@@ -48,7 +48,6 @@ flags.DEFINE_string('wandb_project_name', "sparse_rl", "The wandb's project name
 flags.DEFINE_string('wandb_entity', "louis_t0", "the entity (team) of wandb's project")
 
 ###sparsity config
-# parser.add_argument("--prune", action="store_true")
 flags.DEFINE_string("prune_algorithm", "no_prune", "pruning algorithm")
 # ('no_prune', 'magnitude', 'random', 'saliency', 'magnitude_ste', 'random_ste', 
 # 'global_magnitude', 'global_saliency', 'static_sparse', 'rigl','set')
@@ -103,7 +102,7 @@ def main(_):
         wandb.config.update({"algo": algo})
     
     log_config = {**kwargs, **{k: v for k, v in clean_config.items() if k not in kwargs}}
-    log = Log(Path('normalize_return')/FLAGS.env_name, log_config)
+    log = Log(Path('episode_return_batchnorm')/FLAGS.env_name, log_config)
     log(f'Log dir: {log.dir}')
         
     sparsity_config = ml_collections.ConfigDict()
