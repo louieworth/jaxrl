@@ -40,7 +40,7 @@ flags.DEFINE_integer('updates_per_step', 1, 'Gradient updates per step.')
 flags.DEFINE_integer('max_steps', int(1e6), 'Number of training steps.')
 flags.DEFINE_integer('start_training', int(1e4),
                      'Number of training steps to start training.')
-flags.DEFINE_boolean('layer_normalization', False, 'Use layer normalization.')
+
 flags.DEFINE_boolean('tqdm', True, 'Use tqdm progress bar.')
 flags.DEFINE_boolean('save_video', False, 'Save videos during evaluation.')
 flags.DEFINE_boolean('track', True, 'Track experiments with Weights and Biases.')
@@ -58,6 +58,10 @@ flags.DEFINE_float("prune_actor_sparsity", 0.3, "sparsity")
 flags.DEFINE_float("prune_critic_sparsity", 0.3, "sparsity")
 flags.DEFINE_string("prune_dist_type", "erk", "distribution type")
 flags.DEFINE_boolean('negative_side_variace', False, 'compute negative side variance')
+
+flags.DEFINE_boolean('layer_normalization', False, 'Use layer normalization.')
+flags.DEFINE_boolean('reset_memory', False, 'Reset memory.')
+flags.DEFINE_integer('reset_memory_interval', int(2e5), 'Reset memory interval.')
 
 
 # config definition
@@ -89,6 +93,8 @@ def main(_):
         clean_config['prune_update_start_step']=FLAGS.prune_update_start_step
         clean_config['prune_actor_sparsity']=FLAGS.prune_actor_sparsity
         clean_config['prune_critic_sparsity']=FLAGS.prune_critic_sparsity
+        clean_config['reset_memory']=FLAGS.reset_memory
+        clean_config['reset_memory_interval']=FLAGS.reset_memory_interval
 
         wandb.init(
             project=FLAGS.wandb_project_name,
@@ -189,6 +195,7 @@ def main(_):
 
         if done:
             observation, done = env.reset(), False
+            
         if i >= FLAGS.start_training:
             for _ in range(FLAGS.updates_per_step):
                 batch = replay_buffer.sample(FLAGS.batch_size)
@@ -202,6 +209,31 @@ def main(_):
             if FLAGS.track:
                 wandb.log({'average_return': eval_stats['return']}, step=i)
                 log.row({'average_return': eval_stats['return']})
+        
+        if FLAGS.reset_memory and i % FLAGS.reset_memory_interval == 0:
+            print('------------reset memory-----------')
+            replay_buffer = ReplayBuffer(env.observation_space, env.action_space,
+                                    replay_buffer_size or FLAGS.max_steps)
+            
+            add_total_step = i + FLAGS.start_training
+            add_current_step = i
+            observation, done = env.reset(), False
+            while add_current_step < add_total_step:
+                action = agent.sample_actions(observation)
+                next_observation, reward, done, info = env.step(action)
+
+                if not done or 'TimeLimit.truncated' in info:
+                    mask = 1.0
+                else:
+                    mask = 0.0
+
+                replay_buffer.insert(observation, action, reward, mask, float(done),
+                                    next_observation)
+                observation = next_observation
+                if done:
+                    observation, done = env.reset(), False
+                add_current_step += 1
+            
 
 if __name__ == '__main__':
     app.run(main)
