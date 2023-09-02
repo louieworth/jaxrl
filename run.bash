@@ -2,7 +2,7 @@
 # Script to reproduce results
 export XLA_PYTHON_CLIENT_MEM_FRACTION=0.1
 export WANDB_API_KEY=9d45bb78a65fb0f3b0402a9eae36ed832ae8cbdc
-GPU_LIST=(0 1)
+GPU_LIST=(1)
 
 env_list=("HalfCheetah-v4" "Hopper-v4" "Walker2d-v4" "Ant-v4")
 # mujoco: "HalfCheetah-v4" "Hopper-v4" "Walker2d-v4" "Ant-v4"
@@ -10,7 +10,7 @@ env_list=("HalfCheetah-v4" "Hopper-v4" "Walker2d-v4" "Ant-v4")
 #  "humanoid-stand" "humanoid-run" "quadruped-run" "hopper-hop" "swimmer-swimmer15"
 
 # 
-for seed in 1 2 3; do
+for seed in 2; do
         for env in ${env_list[*]}; do
         GPU_DEVICE=${GPU_LIST[task%${#GPU_LIST[@]}]}
         CUDA_VISIBLE_DEVICES=$GPU_DEVICE 
@@ -18,8 +18,8 @@ for seed in 1 2 3; do
         --env_name="$env" \
         --seed=$seed \
         --prune_algorithm='magnitude' \
-        --prune_actor_sparsity=0.9 \
-        --prune_critic_sparsity=0.9 \
+        --prune_actor_sparsity=0.85 \
+        --prune_critic_sparsity=0.85 \
         --prune_dist_type='erk' \
         --layer_normalization=True \
         --reset_memory=True \

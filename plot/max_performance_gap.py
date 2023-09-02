@@ -175,7 +175,7 @@ def plots(logdir, smooth, save_path, task_name):
     fig, axs = plt.subplots(1, 4, figsize=(16, 4))
     # "HalfCheetah-v4", "Hopper-v4", "Walker2d-v4", "Ant-v4" 
     # "cheetah-run", "finger-turn_hard", "hopper-hop", "humanoid-run"
-    env_groups = ["HalfCheetah-v4", "Hopper-v4", "Walker2d-v4", "Ant-v4"]
+    env_groups = ["cheetah-run", "finger-turn_hard", "hopper-hop", "humanoid-run"]
     keys = ['sparsity']
     colors=['#023e8a']
     axs = axs.reshape(1, -1).tolist()[0]
@@ -218,14 +218,14 @@ def plots(logdir, smooth, save_path, task_name):
         
 
     plt.tight_layout()
-    plt.savefig(save_path + task_name + '.jpg',  bbox_inches='tight')
+    plt.savefig(save_path + task_name + '.pdf',  bbox_inches='tight')
     # plt.show()
      
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    tag = 'max_performance_gap_0.05'
+    tag = 'max_performance_gap_0.1_update_ratio_32'
     parser.add_argument('--logdir', type=str, default=f'./{tag}')
     parser.add_argument('--smooth', type=int, default=10)
     parser.add_argument('--save_path', type=str, default='./plot/images/')

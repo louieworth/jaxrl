@@ -306,6 +306,7 @@ def plots_double(logdir1, logdir2, smooth, save_path, task_name):
     # plt.show()
     # ,  bbox_inches='tight'
     fig.tight_layout()
+    plt.show()
     plt.savefig(f"{save_path}{task_name}.pdf", dpi=200)
      
 
@@ -314,7 +315,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--logdir', type=str, default='./negative_weight_variance')
     parser.add_argument('--smooth', type=int, default=0)
-    parser.add_argument('--save_path', type=str, default='./plot/figs/')
+    parser.add_argument('--save_path', type=str, default='./plot/images/')
     parser.add_argument('--task_name', type=str, default='negative_side_variance')
     args = parser.parse_args()
     plots(args.logdir, args.smooth, args.save_path, args.task_name)
