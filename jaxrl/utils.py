@@ -166,3 +166,30 @@ class Log:
         self.txt_file.close()
         if self.csv_file is not None:
             self.csv_file.close()
+            
+def loss(diff):
+    weight = jnp.where(diff < 0, 1, 0)
+    return weight * (diff**2)
+           
+def calculate_nwr(params, sparse_state=None, 
+                                     grads=None, 
+                                     negative_bias: bool = False,
+                                     l2_norm: bool = False,
+                                     is_actor: bool = False):
+    del sparse_state, grads
+    assert not (negative_bias and l2_norm), "only one of normalize OR l1_norm can be True."
+    if negative_bias:
+      param_magnitudes = jax.tree_map(lambda p: jnp.abs(p), params)
+      param_magnitudes = jax.tree_map(lambda p: loss((p - jnp.mean(p))/jnp.mean(p)), param_magnitudes)
+      if is_actor:
+        kernel_magnitudes = [jnp.sum(mag) for mag in jax.tree_util.tree_leaves(param_magnitudes) if len(mag.shape) > 1]
+        return kernel_magnitudes[0], kernel_magnitudes[1], kernel_magnitudes[2], kernel_magnitudes[3], sum(kernel_magnitudes)
+      else:
+        kernel_magnitudes = [jnp.sum(mag) for mag in jax.tree_util.tree_leaves(param_magnitudes) if len(mag.shape) > 2] 
+        return kernel_magnitudes[0], kernel_magnitudes[1], kernel_magnitudes[2], sum(kernel_magnitudes)
+
+    elif l2_norm:
+      param_magnitudes = jax.tree_map(lambda p: jnp.abs(p / jnp.linalg.norm(p)), params)
+    else: # l1-normalization
+      param_magnitudes = jax.tree_map(jnp.abs, params)
+    return param_magnitudes

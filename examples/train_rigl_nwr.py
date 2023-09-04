@@ -20,7 +20,7 @@ from jaxrl.agents import (AWACLearner, DDPGLearner, REDQLearner, SACLearner,
                           SACV1Learner)
 from jaxrl.datasets import ReplayBuffer
 from jaxrl.evaluation import evaluate
-from jaxrl.utils import make_env, calculate_scores, Log
+from jaxrl.utils import make_env, calculate_nwr, Log
 
 import jaxpruner
 import ml_collections
@@ -28,7 +28,7 @@ FLAGS = flags.FLAGS
 
 
 
-flags.DEFINE_string('env_name', 'HalfCheetah-v2', 'Environment name.')
+flags.DEFINE_string('env_name', 'HalfCheetah-v4', 'Environment name.')
 flags.DEFINE_string('save_dir', 'tmp/', 'Tensorboard logging dir.')
 flags.DEFINE_integer('seed', 42, 'Random seed.')
 flags.DEFINE_integer('eval_episodes', 10,
@@ -43,7 +43,7 @@ flags.DEFINE_integer('start_training', int(1e4),
 
 flags.DEFINE_boolean('tqdm', True, 'Use tqdm progress bar.')
 flags.DEFINE_boolean('save_video', False, 'Save videos during evaluation.')
-flags.DEFINE_boolean('track', True, 'Track experiments with Weights and Biases.')
+flags.DEFINE_boolean('track', False, 'Track experiments with Weights and Biases.')
 flags.DEFINE_string('wandb_project_name', "sparse_rl", "The wandb's project name.")
 flags.DEFINE_string('wandb_entity', "louis_t0", "the entity (team) of wandb's project")
 
@@ -76,25 +76,24 @@ def main(_):
     kwargs = dict(FLAGS.config)
     algo = kwargs.pop('algo')
     run_name = f"{FLAGS.env_name}__{algo}__{FLAGS.seed}"
+    clean_config = {}
+    clean_config['algo'] = algo
+    
+    clean_config['env_name'] = FLAGS.env_name
+    clean_config['seed'] = FLAGS.seed
+    clean_config['layer_normalization'] = FLAGS.layer_normalization
+    clean_config['actor_lr']=kwargs['actor_lr']
+    clean_config['critic_lr']=kwargs['critic_lr']
+    
+    clean_config['prune_algorithm']=FLAGS.prune_algorithm
+    clean_config['prune_update_freq']=FLAGS.prune_update_freq
+    clean_config['prune_update_start_step']=FLAGS.prune_update_start_step
+    clean_config['prune_actor_sparsity']=FLAGS.prune_actor_sparsity
+    clean_config['prune_critic_sparsity']=FLAGS.prune_critic_sparsity
+    clean_config['reset_memory']=FLAGS.reset_memory
+    clean_config['reset_memory_interval']=FLAGS.reset_memory_interval
     if FLAGS.track:
         import wandb
-        
-        clean_config = {}
-        clean_config['algo'] = algo
-        
-        clean_config['env_name'] = FLAGS.env_name
-        clean_config['seed'] = FLAGS.seed
-        clean_config['layer_normalization'] = FLAGS.layer_normalization
-        clean_config['actor_lr']=kwargs['actor_lr']
-        clean_config['critic_lr']=kwargs['critic_lr']
-        
-        clean_config['prune_algorithm']=FLAGS.prune_algorithm
-        clean_config['prune_update_freq']=FLAGS.prune_update_freq
-        clean_config['prune_update_start_step']=FLAGS.prune_update_start_step
-        clean_config['prune_actor_sparsity']=FLAGS.prune_actor_sparsity
-        clean_config['prune_critic_sparsity']=FLAGS.prune_critic_sparsity
-        clean_config['reset_memory']=FLAGS.reset_memory
-        clean_config['reset_memory_interval']=FLAGS.reset_memory_interval
 
         wandb.init(
             project=FLAGS.wandb_project_name,
@@ -108,7 +107,7 @@ def main(_):
         wandb.config.update({"algo": algo})
     
     log_config = {**kwargs, **{k: v for k, v in clean_config.items() if k not in kwargs}}
-    log = Log(Path('episode_return_batchnorm')/FLAGS.env_name, log_config)
+    log = Log(Path(f'negative_weight_variance_rigl_{FLAGS.prune_actor_sparsity}')/FLAGS.env_name, log_config)
     log(f'Log dir: {log.dir}')
         
     sparsity_config = ml_collections.ConfigDict()
@@ -209,6 +208,14 @@ def main(_):
             if FLAGS.track:
                 wandb.log({'average_return': eval_stats['return']}, step=i)
                 log.row({'average_return': eval_stats['return']})
+            else:
+                _, _, _, _, actor_total = calculate_nwr(agent.actor.params, negative_bias=True, is_actor=True)
+                _, _, _, critic_total = calculate_nwr(agent.critic.params, negative_bias=True, is_actor=False)
+                log.row({
+                    'actor_total': actor_total,
+                    'critic_total': critic_total,
+                    'total': actor_total + critic_total,
+                    'average_return': eval_stats['return']})
         
         if FLAGS.reset_memory and i % FLAGS.reset_memory_interval == 0:
             print('------------reset memory-----------')

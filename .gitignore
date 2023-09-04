@@ -14,6 +14,8 @@ normalize_return
 episode_return
 episode_return_batchnorm/
 run.bash
+negative_weight_variance_rigl_0.3
+negative_weight_variance_rigl_0.9
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
