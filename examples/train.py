@@ -18,7 +18,7 @@ from jaxrl.agents import (AWACLearner, DDPGLearner, REDQLearner, SACLearner,
                           SACV1Learner)
 from jaxrl.datasets import ReplayBuffer
 from jaxrl.evaluation import evaluate
-from jaxrl.utils import make_env, Log, calculate_nwr
+from jaxrl.utils import make_env, Log, calculate
 
 FLAGS = flags.FLAGS
 
@@ -82,7 +82,7 @@ def main(_):
         )
         wandb.config.update({"algo": algo})
         
-    log = Log(Path('negative_weight_variance')/f"{FLAGS.env_name}_updates_per_step_{FLAGS.updates_per_step}", kwargs)
+    log = Log(Path('network_statistics')/f"{FLAGS.env_name}", kwargs)
     log(f'Log dir: {log.dir}')
     
     if FLAGS.save_video:
@@ -155,6 +155,7 @@ def main(_):
 
         if done:
             observation, done = env.reset(), False
+        
         if i >= FLAGS.start_training:
             for _ in range(FLAGS.updates_per_step):
                 batch = replay_buffer.sample(FLAGS.batch_size)
@@ -162,15 +163,24 @@ def main(_):
                 if FLAGS.track:
                     wandb.log(update_info, step=i)
         
+        if i % FLAGS.log_interval == 1:
+            agent.last_actor = agent.actor
+            agent.last_critic = agent.critic
         if i % FLAGS.eval_interval == 0:
-            eval_stats = evaluate(agent, eval_env, FLAGS.eval_episodes, sparse_model=False)
+            # eval_stats = evaluate(agent, eval_env, FLAGS.eval_episodes, sparse_model=False)
             if FLAGS.track:
-                wandb.log({'average_return': eval_stats['return'],
-                        'sparse_average_return': sparse_eval_stats['return'],
-                        'actor_sparsity_level': actor_sparsity_level,
-                        'critic_sparsity_level': critic_sparsity_level}, step=i)
-            
-            log.row({'normalized_return': eval_stats['return']})
+                wandb.log({'average_return': eval_stats['return']}, step=i)
+                
+            actor_info = calculate(agent.actor.params, agent.last_actor.params, is_actor=True)
+            critic_info= calculate(agent.critic.params, agent.last_critic.params, is_actor=False)
+            log.row({**actor_info,
+                     **critic_info,
+                     'epsilon_0_1': (actor_info['actor_epsilon_0_1'] + critic_info['critic_epsilon_0_1']) / 2,
+                     'epsilon_0_2': (actor_info['actor_epsilon_0_2'] + critic_info['critic_epsilon_0_2']) / 2,
+                     'epsilon_0_0_1': (actor_info['actor_epsilon_0_1'] + critic_info['critic_epsilon_0_0_1']) / 2,
+                     'epsilon_0_0_5': (actor_info['actor_epsilon_0_0_5'] + critic_info['critic_epsilon_0_0_5']) / 2,
+                     'last_mag': (actor_info['actor_last_msg'] + critic_info['critic_last_msg']) / 2})
+            # log.row({'normalized_return': eval_stats['return']})
             if FLAGS.negative_side_variace:
                 sparsity = FLAGS.init_sparsity + (FLAGS.target_sparsity - FLAGS.init_sparsity) * i / FLAGS.max_steps
                 sparsity_distribution = functools.partial(

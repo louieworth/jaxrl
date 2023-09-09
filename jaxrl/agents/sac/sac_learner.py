@@ -114,6 +114,12 @@ class SACLearner(object):
         copy_critic = Model.create(critic_def,
                               inputs=[critic_key, observations, actions],
                               tx=optax.adam(learning_rate=actor_lr))
+        
+        last_actor = Model.create(actor_def,
+                             inputs=[actor_key, observations])
+
+        last_critic = Model.create(critic_def,
+                              inputs=[critic_key, observations, actions])
         copy_target_critic = Model.create(critic_def, 
                                      inputs=[critic_key, observations, actions])
 
@@ -130,6 +136,9 @@ class SACLearner(object):
         self.copy_actor = copy_actor
         self.copy_critic = copy_critic
         self.copy_target_critic = copy_target_critic
+        
+        self.last_actor = last_actor
+        self.last_critic = last_critic
 
         self.step = 1
 

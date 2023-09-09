@@ -10,6 +10,7 @@ negative_weight_variance
 normalize_return
 models_32
 episode_return
+network_statistics
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
