@@ -184,73 +184,35 @@ def calculate_wdi(mag, last_mag, is_actor=False):
     # sum(1 for k1, k2 in zip(mag.flatten(), last_mag.flatten()) if k1 < k2)
     return num_neurons_smaller_than_last_mag.mean()
 
-def calculate(params, last_params, is_actor=False):
+def calculate(params, last_params, is_actor=False, grad=False):
     param_magnitudes = jax.tree_map(lambda p: jnp.abs(p), params)
     last_layer_params_magnitudes = jax.tree_map(lambda p: jnp.abs(p), last_params)
     if is_actor:
-        num_kernels_smaller_than_epsilon_0_1s = []
-        num_kernels_smaller_than_epsilon_0_0_1s = []
-        num_kernels_smaller_than_epsilon_0_0_5s = []
-        num_kernels_smaller_than_epsilon_0_2s = []
         num_neurons_smaller_than_last_mags = []
         # Iterate over layers and compute mean and count of kernels smaller than mean
         for layer_idx, (mag, last_mag) in enumerate(zip(jax.tree_util.tree_leaves(param_magnitudes), jax.tree_util.tree_leaves(last_layer_params_magnitudes))):
             if len(mag.shape) > 1:
-                # mean
-                # medium
-                # epsilon=0.1
-                num_kernels_smaller_than_epsilon_0_0_1 = calculate_zpi(mag, epsilon=0.01, is_actor=True)
-                num_kernels_smaller_than_epsilon_0_0_5 = calculate_zpi(mag, epsilon=0.05, is_actor=True)
-                num_kernels_smaller_than_epsilon_0_1 = calculate_zpi(mag, epsilon=0.1, is_actor=True)
-                num_kernels_smaller_than_epsilon_0_2 = calculate_zpi(mag, epsilon=0.2, is_actor=True)
                 # number of nuerons smaller than last magnitude
                 num_neurons_smaller_than_last_mag = calculate_wdi(mag, last_mag, is_actor=True)
-                
-                num_kernels_smaller_than_epsilon_0_1s.append(num_kernels_smaller_than_epsilon_0_1)
-                num_kernels_smaller_than_epsilon_0_0_1s.append(num_kernels_smaller_than_epsilon_0_0_1)
-                num_kernels_smaller_than_epsilon_0_0_5s.append(num_kernels_smaller_than_epsilon_0_0_5)
-                num_kernels_smaller_than_epsilon_0_2s.append(num_kernels_smaller_than_epsilon_0_2)
                 num_neurons_smaller_than_last_mags.append(num_neurons_smaller_than_last_mag)
-
-        return {
-            'actor_epsilon_0_1': np.mean(num_kernels_smaller_than_epsilon_0_1s) * 100,
-            'actor_epsilon_0_0_1': np.mean(num_kernels_smaller_than_epsilon_0_0_1s) * 100,
-            'actor_epsilon_0_0_5': np.mean(num_kernels_smaller_than_epsilon_0_0_5s) * 100,
-            'actor_epsilon_0_2': np.mean(num_kernels_smaller_than_epsilon_0_2s) * 100,
-            'actor_last_msg': np.mean(num_neurons_smaller_than_last_mags) * 100
-        }
+        if grad: 
+            return {'actor_grad_last_msg': np.mean(num_neurons_smaller_than_last_mags) * 100}
+        else: 
+            return {'actor_last_msg': np.mean(num_neurons_smaller_than_last_mags) * 100}
+            
     else:
-        num_kernels_smaller_than_epsilon_0_1s = []
-        num_kernels_smaller_than_epsilon_0_0_1s = []
-        num_kernels_smaller_than_epsilon_0_0_5s = []
-        num_kernels_smaller_than_epsilon_0_2s = []
         num_neurons_smaller_than_last_mags = []
         # Iterate over layers and compute mean and count of kernels smaller than mean
         for layer_idx, (mag, last_mag) in enumerate(zip(jax.tree_util.tree_leaves(param_magnitudes), jax.tree_util.tree_leaves(last_layer_params_magnitudes))):
             if len(mag.shape) > 2:
-                # mean
-                # medium
-                # epsilon=0.1
-                num_kernels_smaller_than_epsilon_0_0_1 = calculate_zpi(mag, epsilon=0.01)
-                num_kernels_smaller_than_epsilon_0_0_5 = calculate_zpi(mag, epsilon=0.05)
-                num_kernels_smaller_than_epsilon_0_1 = calculate_zpi(mag, epsilon=0.1)
-                num_kernels_smaller_than_epsilon_0_2 = calculate_zpi(mag, epsilon=0.2)
-                # number of nuerons smaller than last magnitude
                 num_neurons_smaller_than_last_mag = calculate_wdi(mag, last_mag)
-                
-                num_kernels_smaller_than_epsilon_0_1s.append(num_kernels_smaller_than_epsilon_0_1)
-                num_kernels_smaller_than_epsilon_0_0_1s.append(num_kernels_smaller_than_epsilon_0_0_1)
-                num_kernels_smaller_than_epsilon_0_0_5s.append(num_kernels_smaller_than_epsilon_0_0_5)
-                num_kernels_smaller_than_epsilon_0_2s.append(num_kernels_smaller_than_epsilon_0_2)
                 num_neurons_smaller_than_last_mags.append(num_neurons_smaller_than_last_mag)
 
-        return {
-            'critic_epsilon_0_1': np.mean(num_kernels_smaller_than_epsilon_0_1s) * 100,
-            'critic_epsilon_0_0_1': np.mean(num_kernels_smaller_than_epsilon_0_0_1s) * 100,
-            'critic_epsilon_0_0_5': np.mean(num_kernels_smaller_than_epsilon_0_0_5s) * 100,
-            'critic_epsilon_0_2': np.mean(num_kernels_smaller_than_epsilon_0_2s) * 100,
-            'critic_last_msg': np.mean(num_neurons_smaller_than_last_mags) * 100
-        }
+        if grad: 
+            return {'critic_grad_last_msg': np.mean(num_neurons_smaller_than_last_mags) * 100}
+        else: 
+            return {'critic_last_msg': np.mean(num_neurons_smaller_than_last_mags) * 100}
+            
 
     
     

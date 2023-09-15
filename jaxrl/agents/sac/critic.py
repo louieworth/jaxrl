@@ -39,6 +39,6 @@ def update(key: PRNGKey, actor: Model, critic: Model, target_critic: Model,
             'q2': q2.mean()
         }
 
-    new_critic, info = critic.apply_gradient(critic_loss_fn)
+    new_critic, info, grad = critic.apply_gradient(critic_loss_fn, grad=True)
 
-    return new_critic, info
+    return new_critic, info, grad

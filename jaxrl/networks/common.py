@@ -77,6 +77,7 @@ class Model:
             self,
             loss_fn: Optional[Callable[[Params], Any]] = None,
             grads: Optional[Any] = None,
+            grad: bool = False,
             has_aux: bool = True) -> Union[Tuple['Model', Any], 'Model']:
         assert (loss_fn is not None or grads is not None,
                 'Either a loss function or grads must be specified.')
@@ -97,10 +98,19 @@ class Model:
         new_model = self.replace(step=self.step + 1,
                                  params=new_params,
                                  opt_state=new_opt_state)
-        if has_aux:
-            return new_model, aux
+        if grad:
+            if has_aux:
+                return new_model, aux, grads
+            else:
+                return new_model, grads
         else:
-            return new_model
+            if has_aux:
+                return new_model, aux
+            else:
+                return new_model
+            
+        
+        
 
     def save(self, save_path: str):
         os.makedirs(os.path.dirname(save_path), exist_ok=True)

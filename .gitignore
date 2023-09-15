@@ -11,6 +11,7 @@ normalize_return
 models_32
 episode_return
 network_statistics
+network_statistics_grad
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

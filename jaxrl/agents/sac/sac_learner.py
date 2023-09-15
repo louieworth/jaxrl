@@ -10,6 +10,7 @@ import jax.numpy as jnp
 from jax.tree_util import tree_flatten, tree_unflatten
 import numpy as np
 import optax
+from jaxrl.utils import make_env, Log, calculate
 
 from jaxrl.agents.sac import temperature
 from jaxrl.agents.sac.actor import update as update_actor
@@ -29,7 +30,7 @@ def _update_jit(
 ) -> Tuple[PRNGKey, Model, Model, Model, Model, InfoDict]:
 
     rng, key = jax.random.split(rng)
-    new_critic, critic_info = update_critic(key,
+    new_critic, critic_info, critic_grad_fn = update_critic(key,
                                             actor,
                                             critic,
                                             target_critic,
@@ -43,11 +44,11 @@ def _update_jit(
         new_target_critic = target_critic
 
     rng, key = jax.random.split(rng)
-    new_actor, actor_info = update_actor(key, actor, new_critic, temp, batch)
+    new_actor, actor_info, actor_grad_fn = update_actor(key, actor, new_critic, temp, batch)
     new_temp, alpha_info = temperature.update(temp, actor_info['entropy'],
                                               target_entropy)
 
-    return rng, new_actor, new_critic, new_target_critic, new_temp, {
+    return rng, new_actor, new_critic, new_target_critic, new_temp, critic_grad_fn, actor_grad_fn, {
         **critic_info,
         **actor_info,
         **alpha_info
@@ -139,6 +140,8 @@ class SACLearner(object):
         
         self.last_actor = last_actor
         self.last_critic = last_critic
+        self.critic_grad = None
+        self.actor_grad = None
 
         self.step = 1
 
@@ -168,7 +171,7 @@ class SACLearner(object):
     def update(self, batch: Batch) -> InfoDict:
         self.step += 1
 
-        new_rng, new_actor, new_critic, new_target_critic, new_temp, info = _update_jit(
+        new_rng, new_actor, new_critic, new_target_critic, new_temp, new_critic_grad, new_actor_grad, info = _update_jit(
             self.rng, self.actor, self.critic, self.target_critic, self.temp,
             batch, self.discount, self.tau, self.target_entropy,
             self.backup_entropy, self.step % self.target_update_period == 0)
@@ -178,8 +181,35 @@ class SACLearner(object):
         self.critic = new_critic
         self.target_critic = new_target_critic
         self.temp = new_temp
+        
+        if self.critic_grad is None:
+            self.critic_grad = new_critic_grad
+            self.actor_gead = new_actor_grad
 
-        return info
+        return info, new_critic_grad, new_actor_grad
+        # else:
+        #     actor_grad_info = calculate(new_actor_grad, self.actor_grad, is_actor=True)
+        #     critic_grad_info= calculate(critic_grad_info, self.critic_grad, is_actor=False)
+        #     self.critic_grad = new_critic_grad
+        #     self.actor_grad = new_actor_grad
+        
+    def update_grad_info(self, new_grad, is_actor) -> InfoDict:
+
+        if is_actor:
+            actor_grad_info = calculate(new_grad, self.actor_grad, is_actor=True)
+        else:
+            critic_grad_info= calculate(new_grad, self.critic_grad, is_actor=False)
+        
+        self.critic_grad = new_grad
+        self.actor_grad = new_grad
+         
+        return {
+            **actor_grad_info,
+            **critic_grad_info
+        }
+        
+    
+        
     
     def update_instant_sparsity(self, env_name, step, sparsity, pruner):
         # self.save_networks(env_name, additional_info=f"step_{step}")

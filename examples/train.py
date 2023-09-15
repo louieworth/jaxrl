@@ -82,7 +82,7 @@ def main(_):
         )
         wandb.config.update({"algo": algo})
         
-    log = Log(Path('network_statistics')/f"{FLAGS.env_name}", kwargs)
+    log = Log(Path('network_statistics_grad')/f"{FLAGS.env_name}", kwargs)
     log(f'Log dir: {log.dir}')
     
     if FLAGS.save_video:
@@ -159,66 +159,30 @@ def main(_):
         if i >= FLAGS.start_training:
             for _ in range(FLAGS.updates_per_step):
                 batch = replay_buffer.sample(FLAGS.batch_size)
-                update_info = agent.update(batch)
+                update_info, new_critic_grad, new_actor_grad = agent.update(batch)
                 if FLAGS.track:
                     wandb.log(update_info, step=i)
         
-        if i % FLAGS.log_interval == 1:
-            agent.last_actor = agent.actor
-            agent.last_critic = agent.critic
-        if i % FLAGS.eval_interval == 0:
-            # eval_stats = evaluate(agent, eval_env, FLAGS.eval_episodes, sparse_model=False)
-            if FLAGS.track:
-                wandb.log({'average_return': eval_stats['return']}, step=i)
-                
-            actor_info = calculate(agent.actor.params, agent.last_actor.params, is_actor=True)
-            critic_info= calculate(agent.critic.params, agent.last_critic.params, is_actor=False)
-            log.row({**actor_info,
-                     **critic_info,
-                     'epsilon_0_1': (actor_info['actor_epsilon_0_1'] + critic_info['critic_epsilon_0_1']) / 2,
-                     'epsilon_0_2': (actor_info['actor_epsilon_0_2'] + critic_info['critic_epsilon_0_2']) / 2,
-                     'epsilon_0_0_1': (actor_info['actor_epsilon_0_1'] + critic_info['critic_epsilon_0_0_1']) / 2,
-                     'epsilon_0_0_5': (actor_info['actor_epsilon_0_0_5'] + critic_info['critic_epsilon_0_0_5']) / 2,
-                     'last_mag': (actor_info['actor_last_msg'] + critic_info['critic_last_msg']) / 2})
-            # log.row({'normalized_return': eval_stats['return']})
-            if FLAGS.negative_side_variace:
-                sparsity = FLAGS.init_sparsity + (FLAGS.target_sparsity - FLAGS.init_sparsity) * i / FLAGS.max_steps
-                sparsity_distribution = functools.partial(
-                jaxpruner.sparsity_distributions.uniform, sparsity=sparsity)
-                pruner = jaxpruner.MagnitudePruning(sparsity_distribution_fn=sparsity_distribution)
-                agent.update_instant_sparsity(FLAGS.env_name, i, sparsity, pruner)
-                sparse_eval_stats = evaluate(agent, eval_env, FLAGS.eval_episodes, sparse_model=True)
-                actor_sparsity_level = jaxpruner.summarize_sparsity(agent.copy_actor.params, only_total_sparsity=True)
-                critic_sparsity_level = jaxpruner.summarize_sparsity(agent.copy_critic.params, only_total_sparsity=True)
-                
-                actor_layer_0, actor_layer_1, actor_layer_2, actor_layer_3, actor_total = calculate_nwr(agent.actor.params, negative_bias=True, is_actor=True)
-                critic_layer_0, critic_layer_1, critic_layer_2, critic_total = calculate_nwr(agent.critic.params, negative_bias=True, is_actor=False)
-                sparse_actor_layer_0, sparse_actor_layer_1, sparse_actor_layer_2, sparse_actor_layer_3, sparse_actor_total = calculate_nwr(agent.copy_actor.params, negative_bias=True, is_actor=True)
-                sparse_critic_layer_0, sparse_critic_layer_1, sparse_critic_layer_2, sparse_critic_total = calculate_nwr(agent.copy_critic.params, negative_bias=True, is_actor=False)
-                
-                log.row({'actor_layer_0': actor_layer_0,
-                         'sparse_actor_layer_0': sparse_actor_layer_0,
-                         'actor_layer_1': actor_layer_1,
-                         'sparse_actor_layer_1': sparse_actor_layer_1,
-                         'actor_layer_2': actor_layer_2,
-                         'sparse_actor_layer_2': sparse_actor_layer_2,
-                         'actor_layer_3': actor_layer_3,
-                         'sparse_actor_layer_3': sparse_actor_layer_3,
-                         'critic_layer_0': critic_layer_0,
-                         'sparse_critic_layer_0': sparse_critic_layer_0,
-                         'critic_layer_1': critic_layer_1,
-                         'sparse_critic_layer_1': sparse_critic_layer_1,
-                         'critic_layer_2': critic_layer_2,
-                         'sparse_critic_layer_2': sparse_critic_layer_2,
-                         'actor_total': actor_total,
-                         'sparse_actor_total': sparse_actor_total,
-                         'critic_total': critic_total,
-                         'sparse_critic_total': sparse_critic_total,
-                         'average_return': eval_stats['return'],
-                         'sparse_average_return': sparse_eval_stats['return'],
-                         'sparsity': critic_sparsity_level['_total_sparsity']
-                         })
-                
+            if i % FLAGS.log_interval == 1:
+                agent.last_actor = agent.actor
+                agent.last_critic = agent.critic
+                agent.critic_grad = new_critic_grad
+                agent.actor_grad = new_actor_grad
+            if i % FLAGS.eval_interval == 0:
+                # eval_stats = evaluate(agent, eval_env, FLAGS.eval_episodes, sparse_model=False)
+                # if FLAGS.track:
+                #     wandb.log({'average_return': eval_stats['return']}, step=i)
+                actor_grad_info = calculate(new_actor_grad, agent.actor_grad, is_actor=True, grad=True)
+                critic_grad_info = calculate(new_critic_grad, agent.critic_grad, grad=True)
+                actor_info = calculate(agent.actor.params, agent.last_actor.params, is_actor=True)
+                critic_info= calculate(agent.critic.params, agent.last_critic.params)
+                log.row({**actor_info,
+                        **critic_info,
+                        **actor_grad_info,
+                        **critic_grad_info,
+                        'last_grad_msg': (actor_info['actor_last_msg'] + critic_info['critic_last_msg']) / 2,
+                        'last_grad_msg': (actor_grad_info['actor_grad_last_msg'] + critic_grad_info['critic_grad_last_msg']) / 2})
+                    
         if FLAGS.save_model and i % FLAGS.save_model_interval == 0:
             logging.info(f"save the model")
             agent.save_networks(FLAGS.env_name, additional_info=f"step_{i}_seed{FLAGS.seed}", save_dir=f'./models/updates_per_step_{FLAGS.updates_per_step}')
