@@ -12,6 +12,8 @@ models_32
 episode_return
 network_statistics
 network_statistics_grad
+network_statistics_grad_relu
+network_statistics_leaky_relu
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

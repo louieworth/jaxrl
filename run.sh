@@ -4,7 +4,7 @@
 #  "humanoid-stand" "humanoid-run" "quadruped-run" "hopper-hop" "swimmer-swimmer15"
 # for env in "${envs[@]}"; do
 GPU_LIST=(0 1)
-env_list=("HalfCheetah-v4" "Hopper-v4" "Walker2d-v4" "Ant-v4" "Ant-v4")
+env_list=("HalfCheetah-v4" "Hopper-v4" "Walker2d-v4" "Ant-v4")
 # declare -a envs=("HalfCheetah-v4" "Hopper-v4" "Walker2d-v4" "Ant-v4"
 #  "walker-run" "cheetah-run" "acrobot-swingup" "fish-swim"  "quadruped-run" "hopper-hop")
 XLA_PYTHON_CLIENT_MEM_FRACTION=0.07
@@ -16,6 +16,9 @@ for seed in 0 1; do
     python examples/train.py \
     --env_name="$env" \
     --seed=$seed &
+
+    sleep 2
+    let "task=$task+1"
 done
 done
 
