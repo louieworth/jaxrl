@@ -21,6 +21,6 @@ def get_config():
     config.target_entropy = None
     config.backup_entropy = True
 
-    config.replay_buffer_size = None
+    config.replay_buffer_size = int(2e5)
 
     return config

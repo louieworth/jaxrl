@@ -181,37 +181,49 @@ def calculate_wdi(mag, last_mag, is_actor=False):
     else:
         N = mag.shape[0] * mag.shape[1] * mag.shape[2]
     num_neurons_smaller_than_last_mag = jnp.where(mag < last_mag, 1, 0)
-    # sum(1 for k1, k2 in zip(mag.flatten(), last_mag.flatten()) if k1 < k2)
-    return num_neurons_smaller_than_last_mag.mean()
+    A = num_neurons_smaller_than_last_mag * mag
+    B = num_neurons_smaller_than_last_mag * last_mag
+    overlap_co = jnp.sum(jnp.minimum(A, B)) / (jnp.sum(jnp.maximum(A, B)) + 1e-8)
+    
+    return num_neurons_smaller_than_last_mag.mean(), overlap_co
 
 def calculate(params, last_params, is_actor=False, grad=False):
     param_magnitudes = jax.tree_map(lambda p: jnp.abs(p), params)
     last_layer_params_magnitudes = jax.tree_map(lambda p: jnp.abs(p), last_params)
     if is_actor:
         num_neurons_smaller_than_last_mags = []
+        overlap_cos = []
         # Iterate over layers and compute mean and count of kernels smaller than mean
         for layer_idx, (mag, last_mag) in enumerate(zip(jax.tree_util.tree_leaves(param_magnitudes), jax.tree_util.tree_leaves(last_layer_params_magnitudes))):
             if len(mag.shape) > 1:
                 # number of nuerons smaller than last magnitude
-                num_neurons_smaller_than_last_mag = calculate_wdi(mag, last_mag, is_actor=True)
+                num_neurons_smaller_than_last_mag, overlap_co = calculate_wdi(mag, last_mag, is_actor=True)
                 num_neurons_smaller_than_last_mags.append(num_neurons_smaller_than_last_mag)
+                overlap_cos.append(overlap_co)
         if grad: 
-            return {'actor_grad_last_msg': np.mean(num_neurons_smaller_than_last_mags) * 100}
+            return {'actor_grad_last_msg': np.mean(num_neurons_smaller_than_last_mags) * 100,
+                    'actor_grad_overlap_co': np.mean(overlap_cos)* 100}
         else: 
-            return {'actor_last_msg': np.mean(num_neurons_smaller_than_last_mags) * 100}
+            return {'actor_last_msg': np.mean(num_neurons_smaller_than_last_mags) * 100,
+                    'actor_weight_overlap_co': np.mean(overlap_cos)* 100}
             
     else:
         num_neurons_smaller_than_last_mags = []
+        overlap_cos = []
         # Iterate over layers and compute mean and count of kernels smaller than mean
         for layer_idx, (mag, last_mag) in enumerate(zip(jax.tree_util.tree_leaves(param_magnitudes), jax.tree_util.tree_leaves(last_layer_params_magnitudes))):
             if len(mag.shape) > 2:
-                num_neurons_smaller_than_last_mag = calculate_wdi(mag, last_mag)
+                num_neurons_smaller_than_last_mag, overlap_co = calculate_wdi(mag, last_mag)
                 num_neurons_smaller_than_last_mags.append(num_neurons_smaller_than_last_mag)
+                overlap_cos.append(overlap_co) 
 
         if grad: 
-            return {'critic_grad_last_msg': np.mean(num_neurons_smaller_than_last_mags) * 100}
+            return {'critic_grad_last_msg': np.mean(num_neurons_smaller_than_last_mags) * 100,
+                    'critic_grad_overlap_co': np.mean(overlap_co)* 100
+                    }
         else: 
-            return {'critic_last_msg': np.mean(num_neurons_smaller_than_last_mags) * 100}
+            return {'critic_last_msg': np.mean(num_neurons_smaller_than_last_mags) * 100, 
+                    'cctor_weight_overlap_co': np.mean(overlap_co)* 100}
             
 
     

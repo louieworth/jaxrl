@@ -12,7 +12,10 @@ models_32
 episode_return
 network_statistics
 network_statistics_grad
-
+network_statistics_grad
+network_statistics_coefficient
+network_statistics_grad_sigmoid
+policy_distance
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

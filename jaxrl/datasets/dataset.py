@@ -65,6 +65,14 @@ class Dataset(object):
                      rewards=self.rewards[indx],
                      masks=self.masks[indx],
                      next_observations=self.next_observations[indx])
+    
+    def sample_top(self, k: int = 256) -> Batch:
+        indx = [i for i in range(0, k)]
+        return Batch(observations=self.observations[indx],
+                     actions=self.actions[indx],
+                     rewards=self.rewards[indx],
+                     masks=self.masks[indx],
+                     next_observations=self.next_observations[indx])
 
     def get_initial_states(
         self,
