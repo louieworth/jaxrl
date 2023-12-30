@@ -186,6 +186,6 @@ def calculate(params, last_params, is_actor=False, grad=False):
                     }
         else: 
             return {'critic_weight_wsr': round(np.mean(ratio_neurons_smaller_than_last_mags) * 100, 2), 
-                    'cctor_weight_overlap_co': round(np.mean(overlap_cos)* 100, 2)}
+                    'critic_weight_overlap_co': round(np.mean(overlap_cos)* 100, 2)}
             
 

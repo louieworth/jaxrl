@@ -111,7 +111,7 @@ def main(_):
         wandb.config.update({"algo": algo})
     
     # log_config = {**kwargs, **{k: v for k, v in clean_config.items() if k not in kwargs}}
-    log = Log(Path(f'network_wsr_init_checkpoint_{FLAGS.prune_actor_sparsity}')/FLAGS.env_name, kwargs)
+    log = Log(Path(f'magnitude_wsr_last_{FLAGS.prune_actor_sparsity}')/FLAGS.env_name, kwargs)
     log(f'Log dir: {log.dir}')
     
         
@@ -204,56 +204,56 @@ def main(_):
                 batch = replay_buffer.sample(FLAGS.batch_size)
                 update_info, new_critic_grad, new_actor_grad = agent.update(batch)
 
-        if FLAGS.track and i % FLAGS.log_interval == 0:
-            wandb.log(update_info, step=i)
-    
-        if i % FLAGS.eval_interval == 1 and use_init_agent:
-                agent.last_actor = agent.actor
-                agent.last_critic = agent.critic
-                agent.critic_grad = new_critic_grad
-                agent.actor_grad = new_actor_grad
-                use_init_agent = False
-                
-        if i % FLAGS.eval_interval == 0:
-            eval_stats = evaluate(agent, eval_env, FLAGS.eval_episodes)
-            if FLAGS.track:
-                wandb.log({'average_return': eval_stats['return']}, step=i)
-            # log.row({'average_return': eval_stats['return']})
-            else:
-                actor_grad_info = calculate(new_actor_grad, agent.actor_grad, is_actor=True, grad=True)
-                critic_grad_info = calculate(new_critic_grad, agent.critic_grad, grad=True)
-                actor_info = calculate(agent.actor.params, agent.last_actor.params, is_actor=True)
-                critic_info= calculate(agent.critic.params, agent.last_critic.params)
-                log.row({**actor_info,
-                        **critic_info,
-                        **actor_grad_info,
-                        **critic_grad_info,
-                        })
-        
-        if FLAGS.reset_memory and i % FLAGS.reset_memory_interval == 0:
-            print('------------reset memory-----------')
-            replay_buffer = ReplayBuffer(env.observation_space, env.action_space,
-                                    FLAGS.replay_buffer_size or FLAGS.max_steps)
-            
-            add_total_step = i + FLAGS.start_training
-            add_current_step = i
-            observation, done = env.reset(), False
-            while add_current_step < add_total_step:
-                action = agent.sample_actions(observation)
-                next_observation, reward, done, info = env.step(action)
+            if FLAGS.track and i % FLAGS.log_interval == 0:
+                wandb.log(update_info, step=i)
 
-                if not done or 'TimeLimit.truncated' in info:
-                    mask = 1.0
+            if i % FLAGS.eval_interval == 1:
+                    agent.last_actor = agent.actor
+                    agent.last_critic = agent.critic
+                    agent.critic_grad = new_critic_grad
+                    agent.actor_grad = new_actor_grad
+                    use_init_agent = False
+                    
+            if i % FLAGS.eval_interval == 0:
+                eval_stats = evaluate(agent, eval_env, FLAGS.eval_episodes)
+                if FLAGS.track:
+                    wandb.log({'average_return': eval_stats['return']}, step=i)
+                # log.row({'average_return': eval_stats['return']})
                 else:
-                    mask = 0.0
+                    actor_grad_info = calculate(new_actor_grad, agent.actor_grad, is_actor=True, grad=True)
+                    critic_grad_info = calculate(new_critic_grad, agent.critic_grad, grad=True)
+                    actor_info = calculate(agent.actor.params, agent.last_actor.params, is_actor=True)
+                    critic_info= calculate(agent.critic.params, agent.last_critic.params)
+                    log.row({**actor_info,
+                            **critic_info,
+                            **actor_grad_info,
+                            **critic_grad_info,
+                            })
 
-                replay_buffer.insert(observation, action, reward, mask, float(done),
-                                    next_observation)
-                observation = next_observation
-                if done:
-                    observation, done = env.reset(), False
-                add_current_step += 1
-                         
+            if FLAGS.reset_memory and i % FLAGS.reset_memory_interval == 0:
+                print('------------reset memory-----------')
+                replay_buffer = ReplayBuffer(env.observation_space, env.action_space,
+                                        FLAGS.replay_buffer_size or FLAGS.max_steps)
+                
+                add_total_step = i + FLAGS.start_training
+                add_current_step = i
+                observation, done = env.reset(), False
+                while add_current_step < add_total_step:
+                    action = agent.sample_actions(observation)
+                    next_observation, reward, done, info = env.step(action)
+
+                    if not done or 'TimeLimit.truncated' in info:
+                        mask = 1.0
+                    else:
+                        mask = 0.0
+
+                    replay_buffer.insert(observation, action, reward, mask, float(done),
+                                        next_observation)
+                    observation = next_observation
+                    if done:
+                        observation, done = env.reset(), False
+                    add_current_step += 1
+                                
         if FLAGS.save_model and i % FLAGS.save_model_interval == 0:
             logging.info(f"save the model")
             agent.save_networks(FLAGS.env_name, additional_info=f"step_{i}_seed{FLAGS.seed}", save_dir=f'./models/updates_per_step_{FLAGS.updates_per_step}')
