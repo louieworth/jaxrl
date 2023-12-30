@@ -10,6 +10,7 @@ from sqlite3 import DatabaseError
 from typing import Optional
 from datetime import datetime
 from pathlib import Path
+import numpy as np
 
 import jax
 import jax.numpy as jnp
@@ -91,36 +92,6 @@ def make_env(env_name: str,
 
     return env
 
-
-def loss(diff):
-    weight = jnp.where(diff < 0, 1, 0)
-    return weight * (diff**2)
-           
-def calculate_scores(params, sparse_state=None, 
-                                     grads=None, 
-                                     negative_bias: bool = False,
-                                     l2_norm: bool = False,
-                                     is_actor: bool = False):
-    del sparse_state, grads
-    assert not (negative_bias and l2_norm), "only one of normalize OR l1_norm can be True."
-    if negative_bias:
-      param_magnitudes = jax.tree_map(lambda p: jnp.abs(p), params)
-      param_magnitudes = jax.tree_map(lambda p: loss(p - jnp.mean(p)), param_magnitudes)
-    #   param_magnitudes = jax.tree_map(lambda p: p, param_magnitudes)
-      if is_actor:
-        kernel_magnitudes = [jnp.sum(mag) for mag in jax.tree_util.tree_leaves(param_magnitudes) if len(mag.shape) > 1]
-        return kernel_magnitudes[0], kernel_magnitudes[1], kernel_magnitudes[2], kernel_magnitudes[3], sum(kernel_magnitudes)
-      else:
-        kernel_magnitudes = [jnp.sum(mag) for mag in jax.tree_util.tree_leaves(param_magnitudes) if len(mag.shape) > 2] 
-        return kernel_magnitudes[0], kernel_magnitudes[1], kernel_magnitudes[2], sum(kernel_magnitudes)
-
-    elif l2_norm:
-      param_magnitudes = jax.tree_map(lambda p: jnp.abs(p / jnp.linalg.norm(p)), params)
-    else: # l1-normalization
-      param_magnitudes = jax.tree_map(jnp.abs, params)
-    return param_magnitudes
-
-
 def _gen_dir_name():
     now_str = datetime.now().strftime('%m-%d-%y_%H.%M.%S')
     rand_str = ''.join(random.choices(string.ascii_lowercase, k=4))
@@ -166,30 +137,56 @@ class Log:
         self.txt_file.close()
         if self.csv_file is not None:
             self.csv_file.close()
-            
-def loss(diff):
-    weight = jnp.where(diff < 0, 1, 0)
-    return weight * (diff**2)
-           
-def calculate_nwr(params, sparse_state=None, 
-                                     grads=None, 
-                                     negative_bias: bool = False,
-                                     l2_norm: bool = False,
-                                     is_actor: bool = False):
-    del sparse_state, grads
-    assert not (negative_bias and l2_norm), "only one of normalize OR l1_norm can be True."
-    if negative_bias:
-      param_magnitudes = jax.tree_map(lambda p: jnp.abs(p), params)
-      param_magnitudes = jax.tree_map(lambda p: loss((p - jnp.mean(p))/jnp.mean(p)), param_magnitudes)
-      if is_actor:
-        kernel_magnitudes = [jnp.sum(mag) for mag in jax.tree_util.tree_leaves(param_magnitudes) if len(mag.shape) > 1]
-        return kernel_magnitudes[0], kernel_magnitudes[1], kernel_magnitudes[2], kernel_magnitudes[3], sum(kernel_magnitudes)
-      else:
-        kernel_magnitudes = [jnp.sum(mag) for mag in jax.tree_util.tree_leaves(param_magnitudes) if len(mag.shape) > 2] 
-        return kernel_magnitudes[0], kernel_magnitudes[1], kernel_magnitudes[2], sum(kernel_magnitudes)
+                     
+def calculate_wdi(mag, last_mag, is_actor=False):
+    if is_actor:
+        N = mag.shape[0] * mag.shape[1]
+    else:
+        N = mag.shape[0] * mag.shape[1] * mag.shape[2]
+    num_neurons_smaller_than_last_mag = jnp.where(mag < last_mag, 1, 0)
+    ratio_neurons_smaller_than_last_mag = jnp.sum(num_neurons_smaller_than_last_mag) / N
+    A = num_neurons_smaller_than_last_mag * mag
+    B = num_neurons_smaller_than_last_mag * last_mag
+    overlap_co = jnp.sum(jnp.minimum(A, B)) / (jnp.sum(jnp.maximum(A, B)) + 1e-8)
+    
+    return ratio_neurons_smaller_than_last_mag, overlap_co
 
-    elif l2_norm:
-      param_magnitudes = jax.tree_map(lambda p: jnp.abs(p / jnp.linalg.norm(p)), params)
-    else: # l1-normalization
-      param_magnitudes = jax.tree_map(jnp.abs, params)
-    return param_magnitudes
+def calculate(params, last_params, is_actor=False, grad=False):
+    param_magnitudes = jax.tree_map(lambda p: jnp.abs(p), params)
+    last_layer_params_magnitudes = jax.tree_map(lambda p: jnp.abs(p), last_params)
+    if is_actor:
+        ratio_neurons_smaller_than_last_mags = []
+        overlap_cos = []
+        # Iterate over layers and compute mean and count of kernels smaller than mean
+        for layer_idx, (mag, last_mag) in enumerate(zip(jax.tree_util.tree_leaves(param_magnitudes), jax.tree_util.tree_leaves(last_layer_params_magnitudes))):
+            if len(mag.shape) > 1:
+                # number of nuerons smaller than last magnitude
+                ratio_neurons_smaller_than_last_mag, overlap_co = calculate_wdi(mag, last_mag, is_actor=True)
+                ratio_neurons_smaller_than_last_mags.append(ratio_neurons_smaller_than_last_mag)
+                overlap_cos.append(overlap_co)
+        if grad: 
+            return {'actor_grad_wsr': round(np.mean(ratio_neurons_smaller_than_last_mags) * 100, 2),
+                    'actor_grad_overlap_co': round(np.mean(overlap_cos)* 100, 2)}
+        else: 
+            return {'actor_weight_wsr': round(np.mean(ratio_neurons_smaller_than_last_mags) * 100, 2), 
+                    'actor_weight_overlap_co': round(np.mean(overlap_cos)* 100, 2)}
+            
+    else:
+        ratio_neurons_smaller_than_last_mags = []
+        overlap_cos = []
+        # Iterate over layers and compute mean and count of kernels smaller than mean
+        for layer_idx, (mag, last_mag) in enumerate(zip(jax.tree_util.tree_leaves(param_magnitudes), jax.tree_util.tree_leaves(last_layer_params_magnitudes))):
+            if len(mag.shape) > 2:
+                ratio_neurons_smaller_than_last_mag, overlap_co = calculate_wdi(mag, last_mag)
+                ratio_neurons_smaller_than_last_mags.append(ratio_neurons_smaller_than_last_mag)
+                overlap_cos.append(overlap_co) 
+
+        if grad: 
+            return {'critic_grad_wsr': round(np.mean(ratio_neurons_smaller_than_last_mags) * 100, 2),
+                    'critic_grad_overlap_co': round(np.mean(overlap_cos)* 100, 2)
+                    }
+        else: 
+            return {'critic_weight_wsr': round(np.mean(ratio_neurons_smaller_than_last_mags) * 100, 2), 
+                    'cctor_weight_overlap_co': round(np.mean(overlap_cos)* 100, 2)}
+            
+

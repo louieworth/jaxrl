@@ -20,7 +20,7 @@ from jaxrl.agents import (AWACLearner, DDPGLearner, REDQLearner, SACLearner,
                           SACV1Learner)
 from jaxrl.datasets import ReplayBuffer
 from jaxrl.evaluation import evaluate
-from jaxrl.utils import make_env, calculate_scores, Log
+from jaxrl.utils import make_env, calculate, Log
 
 import jaxpruner
 import ml_collections
@@ -43,9 +43,11 @@ flags.DEFINE_integer('start_training', int(1e4),
 
 flags.DEFINE_boolean('tqdm', True, 'Use tqdm progress bar.')
 flags.DEFINE_boolean('save_video', False, 'Save videos during evaluation.')
-flags.DEFINE_boolean('track', True, 'Track experiments with Weights and Biases.')
-flags.DEFINE_string('wandb_project_name', "sparse_rl", "The wandb's project name.")
+flags.DEFINE_boolean('track', False, 'Track experiments with Weights and Biases.')
+flags.DEFINE_string('wandb_project_name', "small_buffer", "The wandb's project name.")
 flags.DEFINE_string('wandb_entity', "louis_t0", "the entity (team) of wandb's project")
+flags.DEFINE_boolean('save_model', False, 'Save model during training.')
+flags.DEFINE_integer('save_model_interval', int(5e4), 'Save model interval.')
 
 ###sparsity config
 flags.DEFINE_string("prune_algorithm", "no_prune", "pruning algorithm")
@@ -62,6 +64,7 @@ flags.DEFINE_boolean('negative_side_variace', False, 'compute negative side vari
 flags.DEFINE_boolean('layer_normalization', False, 'Use layer normalization.')
 flags.DEFINE_boolean('reset_memory', False, 'Reset memory.')
 flags.DEFINE_integer('reset_memory_interval', int(2e5), 'Reset memory interval.')
+flags.DEFINE_integer('replay_buffer_size', int(1e6), 'Replay buffer size.')
 
 
 # config definition
@@ -107,9 +110,10 @@ def main(_):
         )
         wandb.config.update({"algo": algo})
     
-    log_config = {**kwargs, **{k: v for k, v in clean_config.items() if k not in kwargs}}
-    log = Log(Path('episode_return_batchnorm')/FLAGS.env_name, log_config)
+    # log_config = {**kwargs, **{k: v for k, v in clean_config.items() if k not in kwargs}}
+    log = Log(Path(f'network_wsr_{FLAGS.prune_actor_sparsity}')/FLAGS.env_name, kwargs)
     log(f'Log dir: {log.dir}')
+    
         
     sparsity_config = ml_collections.ConfigDict()
     sparsity_config.algorithm = FLAGS.prune_algorithm
@@ -144,8 +148,6 @@ def main(_):
     np.random.seed(FLAGS.seed)
     random.seed(FLAGS.seed)
 
-
-    replay_buffer_size = kwargs.pop('replay_buffer_size')
     if algo == 'sac':
         agent = SACLearner(FLAGS.seed,
                            env.observation_space.sample()[np.newaxis],
@@ -172,7 +174,7 @@ def main(_):
         raise NotImplementedError()
     
     replay_buffer = ReplayBuffer(env.observation_space, env.action_space,
-                                 replay_buffer_size or FLAGS.max_steps)
+                                 FLAGS.replay_buffer_size or FLAGS.max_steps)
 
     observation, done = env.reset(), False
     for i in tqdm.tqdm(range(1, FLAGS.max_steps + 1),
@@ -199,40 +201,61 @@ def main(_):
         if i >= FLAGS.start_training:
             for _ in range(FLAGS.updates_per_step):
                 batch = replay_buffer.sample(FLAGS.batch_size)
-                update_info = agent.update(batch)
+                update_info, new_critic_grad, new_actor_grad = agent.update(batch)
 
             if FLAGS.track and i % FLAGS.log_interval == 0:
                 wandb.log(update_info, step=i)
-
-        if i % FLAGS.eval_interval == 0:
-            eval_stats = evaluate(agent, eval_env, FLAGS.eval_episodes)
-            if FLAGS.track:
-                wandb.log({'average_return': eval_stats['return']}, step=i)
-                log.row({'average_return': eval_stats['return']})
         
-        if FLAGS.reset_memory and i % FLAGS.reset_memory_interval == 0:
-            print('------------reset memory-----------')
-            replay_buffer = ReplayBuffer(env.observation_space, env.action_space,
-                                    replay_buffer_size or FLAGS.max_steps)
-            
-            add_total_step = i + FLAGS.start_training
-            add_current_step = i
-            observation, done = env.reset(), False
-            while add_current_step < add_total_step:
-                action = agent.sample_actions(observation)
-                next_observation, reward, done, info = env.step(action)
-
-                if not done or 'TimeLimit.truncated' in info:
-                    mask = 1.0
+            if i % FLAGS.log_interval == 1:
+                    agent.last_actor = agent.actor
+                    agent.last_critic = agent.critic
+                    agent.critic_grad = new_critic_grad
+                    agent.actor_grad = new_actor_grad
+                    
+            if i % FLAGS.eval_interval == 0:
+                eval_stats = evaluate(agent, eval_env, FLAGS.eval_episodes)
+                if FLAGS.track:
+                    wandb.log({'average_return': eval_stats['return']}, step=i)
+                # log.row({'average_return': eval_stats['return']})
                 else:
-                    mask = 0.0
+                    actor_grad_info = calculate(new_actor_grad, agent.actor_grad, is_actor=True, grad=True)
+                    critic_grad_info = calculate(new_critic_grad, agent.critic_grad, grad=True)
+                    actor_info = calculate(agent.actor.params, agent.last_actor.params, is_actor=True)
+                    critic_info= calculate(agent.critic.params, agent.last_critic.params)
+                    log.row({**actor_info,
+                            **critic_info,
+                            **actor_grad_info,
+                            **critic_grad_info,
+                            })
+            
+            if FLAGS.reset_memory and i % FLAGS.reset_memory_interval == 0:
+                print('------------reset memory-----------')
+                replay_buffer = ReplayBuffer(env.observation_space, env.action_space,
+                                        FLAGS.replay_buffer_size or FLAGS.max_steps)
+                
+                add_total_step = i + FLAGS.start_training
+                add_current_step = i
+                observation, done = env.reset(), False
+                while add_current_step < add_total_step:
+                    action = agent.sample_actions(observation)
+                    next_observation, reward, done, info = env.step(action)
 
-                replay_buffer.insert(observation, action, reward, mask, float(done),
-                                    next_observation)
-                observation = next_observation
-                if done:
-                    observation, done = env.reset(), False
-                add_current_step += 1
+                    if not done or 'TimeLimit.truncated' in info:
+                        mask = 1.0
+                    else:
+                        mask = 0.0
+
+                    replay_buffer.insert(observation, action, reward, mask, float(done),
+                                        next_observation)
+                    observation = next_observation
+                    if done:
+                        observation, done = env.reset(), False
+                    add_current_step += 1
+                         
+        if FLAGS.save_model and i % FLAGS.save_model_interval == 0:
+            logging.info(f"save the model")
+            agent.save_networks(FLAGS.env_name, additional_info=f"step_{i}_seed{FLAGS.seed}", save_dir=f'./models/updates_per_step_{FLAGS.updates_per_step}')
+            
             
 
 if __name__ == '__main__':

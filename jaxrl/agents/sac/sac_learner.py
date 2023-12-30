@@ -14,6 +14,7 @@ from jaxrl.agents.sac.critic import target_update
 from jaxrl.agents.sac.critic import update as update_critic
 from jaxrl.datasets import Batch
 from jaxrl.networks import critic_net, policies
+from jaxrl.utils import calculate
 from jaxrl.networks.common import InfoDict, Model, PRNGKey
 
 
@@ -38,7 +39,7 @@ def _update_jit(
         actor_new_params = actor_pre_op(actor.params, actor.opt_state)
         actor = actor.replace(params=actor_new_params)
         
-    new_critic, critic_info = update_critic(key,
+    new_critic, critic_info, critic_grad_fn = update_critic(key,
                                             actor,
                                             critic,
                                             target_critic,
@@ -53,7 +54,7 @@ def _update_jit(
     new_critic = new_critic.replace(params=post_critic_params)
 
     rng, key = jax.random.split(rng)
-    new_actor, actor_info = update_actor(key, actor, new_critic, temp, batch)
+    new_actor, actor_info, actor_grad_fn = update_actor(key, actor, new_critic, temp, batch)
     post_actor_params = actor_pruner.post_gradient_update(
     new_actor.params, new_actor.opt_state)
     new_actor = new_actor.replace(params=post_actor_params)
@@ -74,14 +75,8 @@ def _update_jit(
         actor_sparsity = jaxpruner.summarize_sparsity(new_actor.params)
         critic_sparsity = jaxpruner.summarize_sparsity(new_critic.params)
     sparsity_info['actor_sparsity'] = actor_sparsity['_total_sparsity']
-    # sparsity_info['actor_sparsity_layer_0']=actor_sparsity['MLP_0/Dense_0/kernel']
-    # sparsity_info['actor_sparsity_layer_1']=actor_sparsity['MLP_0/Dense_1/kernel']
     sparsity_info['critic_sparsity'] = critic_sparsity['_total_sparsity']
-    # sparsity_info['critic_sparsity_layer_0']=critic_sparsity['VmapCritic_0/MLP_0/Dense_0/kernel']
-    # sparsity_info['critic_sparsity_layer_1']=critic_sparsity['VmapCritic_0/MLP_0/Dense_1/kernel']
-    # sparsity_info['critic_sparsity_layer_2']=critic_sparsity['VmapCritic_0/MLP_0/Dense_2/kernel']
-    # sparsity_info['critic_sparsity_dense_2']=critic_sparsity['Dense_2/kernel']
-    return rng, new_actor, new_critic, new_target_critic, new_temp, {
+    return rng, new_actor, new_critic, new_target_critic, new_temp, critic_grad_fn, actor_grad_fn,{
         **critic_info,
         **actor_info,
         **alpha_info,
@@ -146,6 +141,23 @@ class SACLearner(object):
         target_critic = Model.create(
             critic_def, inputs=[critic_key, observations, actions])
 
+        copy_actor = Model.create(actor_def,
+                             inputs=[actor_key, observations],
+                             tx=optax.adam(learning_rate=actor_lr))
+
+        copy_critic = Model.create(critic_def,
+                              inputs=[critic_key, observations, actions],
+                              tx=optax.adam(learning_rate=actor_lr))
+        
+        last_actor = Model.create(actor_def,
+                             inputs=[actor_key, observations])
+
+        last_critic = Model.create(critic_def,
+                              inputs=[critic_key, observations, actions])
+        copy_target_critic = Model.create(critic_def, 
+                                     inputs=[critic_key, observations, actions])
+
+
         temp = Model.create(temperature.Temperature(init_temperature),
                             inputs=[temp_key],
                             tx=optax.adam(learning_rate=temp_lr))
@@ -157,6 +169,15 @@ class SACLearner(object):
         self.target_critic = target_critic
         self.temp = temp
         self.rng = rng
+        
+        self.copy_actor = copy_actor
+        self.copy_critic = copy_critic
+        self.copy_target_critic = copy_target_critic
+        
+        self.last_actor = last_actor
+        self.last_critic = last_critic
+        self.critic_grad = None
+        self.actor_grad = None
 
         self.step = 1
 
@@ -174,7 +195,7 @@ class SACLearner(object):
     def update(self, batch: Batch) -> InfoDict:
         self.step += 1
 
-        new_rng, new_actor, new_critic, new_target_critic, new_temp, info = _update_jit(
+        new_rng, new_actor, new_critic, new_target_critic, new_temp, new_critic_grad, new_actor_grad, info = _update_jit(
             self.rng, self.actor, self.actor_pruner, self.critic,  self.critic_pruner, 
             self.target_critic, self.temp, batch, self.discount, self.tau, self.target_entropy,
             self.backup_entropy, self.step % self.target_update_period == 0)
@@ -184,5 +205,24 @@ class SACLearner(object):
         self.critic = new_critic
         self.target_critic = new_target_critic
         self.temp = new_temp
+        
+        if self.critic_grad is None:
+            self.critic_grad = new_critic_grad
+            self.actor_gead = new_actor_grad
 
-        return info
+        return info, new_critic_grad, new_actor_grad
+
+    def update_grad_info(self, new_grad, is_actor) -> InfoDict:
+
+        if is_actor:
+            actor_grad_info = calculate(new_grad, self.actor_grad, is_actor=True)
+        else:
+            critic_grad_info= calculate(new_grad, self.critic_grad, is_actor=False)
+        
+        self.critic_grad = new_grad
+        self.actor_grad = new_grad
+         
+        return {
+            **actor_grad_info,
+            **critic_grad_info
+        }

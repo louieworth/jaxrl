@@ -23,6 +23,6 @@ def update(key: PRNGKey, actor: Model, critic: Model, temp: Model,
             'entropy': -log_probs.mean()
         }
 
-    new_actor, info = actor.apply_gradient(actor_loss_fn)
+    new_actor, info, grad = actor.apply_gradient(actor_loss_fn, grad=True)
 
-    return new_actor, info
+    return new_actor, info, grad

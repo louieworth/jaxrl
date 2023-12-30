@@ -43,9 +43,9 @@ def update(key: PRNGKey, actor: Model, critic: Model, target_critic: Model,
             'q2': q2.mean()
         }
 
-    new_critic, info = critic.apply_gradient(critic_loss_fn)
+    new_critic, info, grad = critic.apply_gradient(critic_loss_fn, grad=True)
     # post_params = pruner.post_gradient_update(
     #     new_critic.params, new_critic.opt_state)
     # new_critic = new_critic.replace(params=post_params)
 
-    return new_critic, info
+    return new_critic, info, grad
