@@ -144,12 +144,11 @@ def calculate_wdi(mag, last_mag, is_actor=False):
     else:
         N = mag.shape[0] * mag.shape[1] * mag.shape[2]
     num_neurons_smaller_than_last_mag = jnp.where(mag < last_mag, 1, 0)
-    ratio_neurons_smaller_than_last_mag = jnp.sum(num_neurons_smaller_than_last_mag) / N
     A = num_neurons_smaller_than_last_mag * mag
     B = num_neurons_smaller_than_last_mag * last_mag
     overlap_co = jnp.sum(jnp.minimum(A, B)) / (jnp.sum(jnp.maximum(A, B)) + 1e-8)
     
-    return ratio_neurons_smaller_than_last_mag, overlap_co
+    return num_neurons_smaller_than_last_mag.mean(), overlap_co
 
 def calculate(params, last_params, is_actor=False, grad=False):
     param_magnitudes = jax.tree_map(lambda p: jnp.abs(p), params)

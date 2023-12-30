@@ -111,7 +111,7 @@ def main(_):
         wandb.config.update({"algo": algo})
     
     # log_config = {**kwargs, **{k: v for k, v in clean_config.items() if k not in kwargs}}
-    log = Log(Path(f'network_wsr_last_checkpoint_{FLAGS.prune_actor_sparsity}')/FLAGS.env_name, kwargs)
+    log = Log(Path(f'network_wsr_init_checkpoint_{FLAGS.prune_actor_sparsity}')/FLAGS.env_name, kwargs)
     log(f'Log dir: {log.dir}')
     
         
@@ -177,6 +177,7 @@ def main(_):
                                  FLAGS.replay_buffer_size or FLAGS.max_steps)
 
     observation, done = env.reset(), False
+    use_init_agent = True
     for i in tqdm.tqdm(range(1, FLAGS.max_steps + 1),
                        smoothing=0.1,
                        disable=not FLAGS.tqdm):
@@ -206,11 +207,12 @@ def main(_):
             if FLAGS.track and i % FLAGS.log_interval == 0:
                 wandb.log(update_info, step=i)
         
-            if i % FLAGS.eval_interval == 1:
+            if i % FLAGS.eval_interval == 1 and use_init_agent:
                     agent.last_actor = agent.actor
                     agent.last_critic = agent.critic
                     agent.critic_grad = new_critic_grad
                     agent.actor_grad = new_actor_grad
+                    use_init_agent = False
                     
             if i % FLAGS.eval_interval == 0:
                 eval_stats = evaluate(agent, eval_env, FLAGS.eval_episodes)

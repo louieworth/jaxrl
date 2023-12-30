@@ -18,7 +18,12 @@ negative_weight_variance_rigl_0.3
 negative_weight_variance_rigl_0.9
 network_statistics
 network_wsr_last_checkpoint_0.9
-
+network_statistics_coefficient
+network_statistics_grad
+network_statistics_grad_sigmoid
+policy_distance
+network_wsr_init_checkpoint_0.9
+network_wsr_last_checkpoint_0.9
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
