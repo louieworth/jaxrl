@@ -17,7 +17,7 @@ run.bash
 negative_weight_variance_rigl_0.3
 negative_weight_variance_rigl_0.9
 network_statistics
-network_wsr_0.9
+network_wsr_last_checkpoint_0.9
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -111,7 +111,7 @@ def main(_):
         wandb.config.update({"algo": algo})
     
     # log_config = {**kwargs, **{k: v for k, v in clean_config.items() if k not in kwargs}}
-    log = Log(Path(f'network_wsr_{FLAGS.prune_actor_sparsity}')/FLAGS.env_name, kwargs)
+    log = Log(Path(f'network_wsr_last_checkpoint_{FLAGS.prune_actor_sparsity}')/FLAGS.env_name, kwargs)
     log(f'Log dir: {log.dir}')
     
         
@@ -206,7 +206,7 @@ def main(_):
             if FLAGS.track and i % FLAGS.log_interval == 0:
                 wandb.log(update_info, step=i)
         
-            if i % FLAGS.log_interval == 1:
+            if i % FLAGS.eval_interval == 1:
                     agent.last_actor = agent.actor
                     agent.last_critic = agent.critic
                     agent.critic_grad = new_critic_grad
